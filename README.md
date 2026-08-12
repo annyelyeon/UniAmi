@@ -5,6 +5,12 @@ NIT3274 Small IT Business Assigment
 
 Recommended stack for the MVP: Expo + React Native + TypeScript + Expo Router, with Supabase as the backend once feature work starts. That combination keeps the app fast to build for a small student team, supports a clean tabbed mobile structure, and fits UniAmi's trust-heavy model with auth, database, and file storage in one place.
 
+Supabase setup in this scaffold:
+
+- Env vars live in `.env.example` as `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`.
+- The client is in `src/lib/supabase.ts`.
+- The profiles table and new-user trigger are defined in `supabase/migrations/001_profiles.sql`.
+
 The current scaffold includes:
 
 - A 5-tab navigation shell for Home, Community, Subject Info, Personal, and Profile.

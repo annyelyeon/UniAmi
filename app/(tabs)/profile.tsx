@@ -3,30 +3,16 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AvatarInitials } from "../../src/components/AvatarInitials";
 import { ScreenShell } from "../../src/components/ScreenShell";
+import { useAuth } from "../../src/context/AuthContext";
 import { colors } from "../../src/theme/colors";
-import type { User } from "../../src/types/models";
-
-const currentUser: User = {
-  id: "user-current",
-  nickname: "Ava Chen",
-  verifiedUniversityEmail: "ava.chen@student.uni.edu.au",
-  university: "UniAmi University",
-  campus: "City",
-  faculty: "Information Technology",
-  year: 2,
-  isPremium: true,
-  premiumStatus: "premium",
-  postCount: 14,
-  stickerPacksOwned: 4,
-  joinedClubs: ["IT Society", "Hiking Club", "Chess Club"],
-  createdAt: "2026-01-10T08:30:00Z",
-  updatedAt: "2026-08-11T09:15:00Z",
-};
-
-// Mock auth/user state for the scaffold; this should later come from real account data.
-const profileUser = currentUser;
 
 export default function ProfileScreen() {
+  const { profile } = useAuth();
+
+  if (!profile) {
+    return null;
+  }
+
   return (
     <ScreenShell title="Profile" subtitle="Verified identity and account overview.">
       <View style={styles.headerRow}>
@@ -37,15 +23,15 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.identityCard}>
-        <AvatarInitials name={profileUser.nickname} />
-        <Text style={styles.nickname}>{profileUser.nickname}</Text>
+        <AvatarInitials name={profile.nickname} />
+        <Text style={styles.nickname}>{profile.nickname}</Text>
 
         <View style={styles.badgeRow}>
           <View style={[styles.badge, styles.verifiedBadge]}>
             <Ionicons name="checkmark-circle-outline" size={14} color="#166534" />
             <Text style={[styles.badgeText, styles.verifiedBadgeText]}>Verified student</Text>
           </View>
-          {profileUser.isPremium ? (
+          {profile.isPremium ? (
             <View style={[styles.badge, styles.premiumBadge]}>
               <Ionicons name="crow-outline" size={14} color={colors.brandRed} />
               <Text style={[styles.badgeText, styles.premiumBadgeText]}>Premium</Text>
@@ -55,13 +41,13 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.sectionCard}>
-        <InfoRow icon="business-outline" label="University" value={profileUser.university} />
-        <InfoRow icon="location-outline" label="Campus" value={profileUser.campus} />
-        <InfoRow icon="school-outline" label="Faculty" value={profileUser.faculty} />
-        <InfoRow icon="calendar-outline" label="Year" value={`${profileUser.year}`} />
+        <InfoRow icon="business-outline" label="University" value={profile.university} />
+        <InfoRow icon="location-outline" label="Campus" value={profile.campus} />
+        <InfoRow icon="school-outline" label="Faculty" value={profile.faculty} />
+        <InfoRow icon="calendar-outline" label="Year" value={`${profile.year}`} />
       </View>
 
-      {profileUser.isPremium ? (
+      {profile.isPremium ? (
         <View style={styles.bannerCard}>
           <View style={styles.bannerLeft}>
             <View style={styles.bannerIconWrap}>
@@ -79,7 +65,7 @@ export default function ProfileScreen() {
         <Text style={styles.sectionTitle}>Joined clubs</Text>
       </View>
       <View style={styles.clubRow}>
-        {profileUser.joinedClubs.map((club) => (
+        {profile.joinedClubs.map((club) => (
           <View key={club} style={styles.clubChip}>
             <Text style={styles.clubChipText}>{club}</Text>
           </View>
@@ -87,8 +73,8 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.statsGrid}>
-        <StatCard label="Posts" value={`${profileUser.postCount}`} />
-        <StatCard label="Stickers owned" value={`${profileUser.stickerPacksOwned} packs`} />
+        <StatCard label="Posts" value={`${profile.postCount}`} />
+        <StatCard label="Stickers owned" value={`${profile.stickerPacksOwned} packs`} />
       </View>
     </ScreenShell>
   );
