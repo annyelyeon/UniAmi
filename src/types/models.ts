@@ -35,6 +35,9 @@ export interface User {
   year: YearLevel;
   isPremium: boolean;
   premiumStatus: PremiumStatus;
+  postCount: number;
+  stickerPacksOwned: number;
+  joinedClubs: string[];
   createdAt: string;
   updatedAt: string;
 }
