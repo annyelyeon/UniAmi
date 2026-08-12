@@ -1,4 +1,4 @@
-import { Stack, usePathname, router } from "expo-router";
+import { Stack, router, useSegments } from "expo-router";
 import { type ReactNode, useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -6,14 +6,15 @@ import { AuthProvider, useAuth } from "../src/context/AuthContext";
 
 function AuthGate({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
-  const pathname = usePathname();
+  const segments = useSegments();
 
   useEffect(() => {
     if (loading) {
       return;
     }
 
-    const isPublicRoute = ["/login", "/signup", "/verify-email"].includes(pathname);
+    const currentRoute = segments[0];
+    const isPublicRoute = ["login", "signup", "verify-email"].includes(currentRoute);
     const inProtectedArea = !isPublicRoute;
 
     if (!session && inProtectedArea) {
@@ -24,7 +25,7 @@ function AuthGate({ children }: { children: ReactNode }) {
     if (session && isPublicRoute) {
       router.replace("/home");
     }
-  }, [loading, pathname, segments, session]);
+  }, [loading, segments, session]);
 
   if (loading) {
     return null;
