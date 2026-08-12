@@ -119,18 +119,11 @@ export interface JobListing {
   description: string;
   location: string;
   applyUrl?: string;
-  premiumOnly: true;
-  postedByUserId: string;
-  createdAt: string;
-  expiresAt?: string;
-}
-
-export interface DirectMessageThread {
-  id: string;
-  participantUserIds: [string, string];
-  lastMessageAt: string;
-  createdAt: string;
-}
+  name: string;
+  stickerCount: number;
+  priceAUD: number | null;
+  creatorId: string | null;
+  isFree: boolean;
 
 export interface DirectMessage {
   id: string;
