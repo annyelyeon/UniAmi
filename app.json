@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "UniAmi",
+    "slug": "uniami",
+    "scheme": "uniami",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
