@@ -80,6 +80,19 @@ export interface SubjectReview {
   text: string;
 }
 
+export interface TimetableEntry {
+  subjectCode: string;
+  day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri";
+  colorTag: string;
+}
+
+export interface Note {
+  title: string;
+  body: string;
+  categoryIcon?: string;
+  attachedStickerPack?: string;
+}
+
 export interface StickerPack {
   id: string;
   creatorUserId: string;
