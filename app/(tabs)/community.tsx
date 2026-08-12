@@ -476,12 +476,3 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 });
-
-export default function CommunityScreen() {
-  return (
-    <ScreenShell
-      title="Community"
-      subtitle="Placeholder for boards, direct messages, and the Premium recruiting board."
-    />
-  );
-}
