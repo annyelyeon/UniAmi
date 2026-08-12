@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ScreenShell } from "../../src/components/ScreenShell";
+import { AvatarInitials } from "../../src/components/AvatarInitials";
 import { colors } from "../../src/theme/colors";
 import type { Board, Post, User } from "../../src/types/models";
 
@@ -145,15 +146,6 @@ const posts: Array<Post & { boardTitle: string; author: User }> = [
   },
 ];
 
-function getInitials(nickname: string) {
-  return nickname
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
-
 function CommunityHeader() {
   return (
     <View style={styles.headerRow}>
@@ -238,9 +230,7 @@ function PostCard({ post }: { post: (typeof posts)[number] }) {
   return (
     <View style={styles.postCard}>
       <View style={styles.postTopRow}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>{getInitials(post.author.nickname)}</Text>
-        </View>
+        <AvatarInitials name={post.author.nickname} />
         <View style={styles.postMeta}>
           <Text style={styles.postAuthor}>{post.author.nickname}</Text>
           <Text style={styles.postBoard}>{post.boardTitle}</Text>
@@ -440,19 +430,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-  },
-  avatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surfaceSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    color: colors.accentStrong,
-    fontSize: 15,
-    fontWeight: "800",
   },
   postMeta: {
     flex: 1,

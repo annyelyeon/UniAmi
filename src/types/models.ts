@@ -13,6 +13,18 @@ export type AssessmentType =
 
 export type StickerPackPricing = "free" | "paid";
 
+export interface Subject {
+  code: string;
+  title: string;
+  averageRating: number;
+  reviewCount: number;
+  assessmentType: AssessmentType;
+  numAssignments: number;
+  groupProjectRequired: boolean;
+  groupSize?: number;
+  prerequisites: string[];
+}
+
 export interface User {
   id: string;
   nickname: string;
@@ -63,19 +75,9 @@ export interface Comment {
 }
 
 export interface SubjectReview {
-  id: string;
   subjectCode: string;
-  subjectName: string;
-  university: string;
-  campus?: string;
-  assessmentType: AssessmentType;
-  assignmentCount: number;
-  hasGroupProject: boolean;
-  prerequisites: string[];
-  reviewerUserId: string;
-  rating: number;
-  summary: string;
-  createdAt: string;
+  authorId: string;
+  text: string;
 }
 
 export interface StickerPack {
