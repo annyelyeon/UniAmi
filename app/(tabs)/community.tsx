@@ -215,7 +215,7 @@ function PostCard({ post }: { post: CommunityPost }) {
         </View>
         <Pressable
           accessibilityRole="button"
-          onPress={() => router.push({ pathname: "/community/messages", params: { userId: post.authorId } })}
+          onPress={() => router.push(`/community/messages/${post.authorId}`)}
           style={styles.messageLink}
         >
           <Ionicons name="paper-plane-outline" size={16} color={colors.accent} />
