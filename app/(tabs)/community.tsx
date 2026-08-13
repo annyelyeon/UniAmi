@@ -1,25 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { ScreenShell } from "../../src/components/ScreenShell";
 import { AvatarInitials } from "../../src/components/AvatarInitials";
+import { useAuth } from "../../src/context/AuthContext";
+import { supabase } from "../../src/lib/supabase";
 import { colors } from "../../src/theme/colors";
 import type { Board, Post, User } from "../../src/types/models";
-
-const currentUser: User = {
-  id: "user-current",
-  nickname: "Ava",
-  verifiedUniversityEmail: "ava@student.uni.edu.au",
-  university: "UniAmi University",
-  campus: "City",
-  faculty: "Information Technology",
-  year: 2,
-  isPremium: false,
-  premiumStatus: "free",
-  createdAt: "2026-01-10T08:30:00Z",
-  updatedAt: "2026-08-01T11:45:00Z",
-};
 
 const boards: Board[] = [
   {
@@ -68,83 +64,50 @@ const boards: Board[] = [
   },
 ];
 
-const posts: Array<Post & { boardTitle: string; author: User }> = [
-  {
-    id: "post-1",
-    boardId: "engineering-it",
-    authorUserId: "user-001",
-    title: "",
-    body: "Has anyone got tips for the COMP2003 lab this week? The setup step is taking longer than expected.",
-    upvoteCount: 18,
-    commentCount: 6,
-    createdAt: "2026-08-11T09:20:00Z",
-    updatedAt: "2026-08-11T09:20:00Z",
-    boardTitle: "Engineering & IT",
-    author: {
-      id: "user-001",
-      nickname: "Liam",
-      verifiedUniversityEmail: "liam@student.uni.edu.au",
-      university: "UniAmi University",
-      campus: "City",
-      faculty: "Engineering & IT",
-      year: 3,
-      isPremium: false,
-      premiumStatus: "free",
-      createdAt: "2026-02-10T07:45:00Z",
-      updatedAt: "2026-08-05T12:00:00Z",
-    },
-  },
-  {
-    id: "post-2",
-    boardId: "business",
-    authorUserId: "user-002",
-    title: "",
-    body: "Reminder: the internship info session recording is up now. Worth watching if you missed it live.",
-    upvoteCount: 25,
-    commentCount: 4,
-    createdAt: "2026-08-10T14:05:00Z",
-    updatedAt: "2026-08-10T14:05:00Z",
-    boardTitle: "Business",
-    author: {
-      id: "user-002",
-      nickname: "Mia",
-      verifiedUniversityEmail: "mia@student.uni.edu.au",
-      university: "UniAmi University",
-      campus: "City",
-      faculty: "Business",
-      year: 2,
-      isPremium: true,
-      premiumStatus: "premium",
-      createdAt: "2026-01-18T10:10:00Z",
-      updatedAt: "2026-08-02T09:15:00Z",
-    },
-  },
-  {
-    id: "post-3",
-    boardId: "design",
-    authorUserId: "user-003",
-    title: "",
-    body: "Anyone want to swap feedback on the portfolio assignment? Happy to review wireframes.",
-    upvoteCount: 12,
-    commentCount: 3,
-    createdAt: "2026-08-09T18:40:00Z",
-    updatedAt: "2026-08-09T18:40:00Z",
-    boardTitle: "Design",
-    author: {
-      id: "user-003",
-      nickname: "Noah",
-      verifiedUniversityEmail: "noah@student.uni.edu.au",
-      university: "UniAmi University",
-      campus: "North",
-      faculty: "Design",
-      year: 4,
-      isPremium: false,
-      premiumStatus: "free",
-      createdAt: "2026-03-22T08:00:00Z",
-      updatedAt: "2026-07-31T16:30:00Z",
-    },
-  },
-];
+
+type PostRow = {
+  id: string;
+  author_id: string;
+  author_nickname: string;
+  board_name: string;
+  university: string;
+  content: string;
+  upvote_count: number;
+  comment_count: number;
+  created_at: string;
+};
+
+type CommunityPost = Post & {
+  authorNickname: string;
+};
+
+async function fetchCommunityPosts(university: string) {
+  const { data, error } = await supabase
+    .from("posts")
+    .select(
+      "id, author_id, author_nickname, board_name, university, content, upvote_count, comment_count, created_at",
+    )
+    .eq("university", university)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return { posts: [] as CommunityPost[], error };
+  }
+
+  const posts = (data as PostRow[] | null | undefined)?.map((post) => ({
+    id: post.id,
+    authorId: post.author_id,
+    authorNickname: post.author_nickname,
+    boardName: post.board_name,
+    university: post.university,
+    content: post.content,
+    upvoteCount: post.upvote_count,
+    commentCount: post.comment_count,
+    createdAt: post.created_at,
+  })) ?? [];
+
+  return { posts, error: null };
+}
 
 function CommunityHeader() {
   return (
@@ -172,8 +135,10 @@ function CommunityHeader() {
 }
 
 function RecruitingBanner() {
+  const { profile } = useAuth();
+
   const openRecruitingBoard = () => {
-    if (!currentUser.isPremium) {
+    if (!profile?.isPremium) {
       router.push("/premium-upsell");
       return;
     }
@@ -226,18 +191,18 @@ function BoardCard({ board }: { board: Board }) {
   );
 }
 
-function PostCard({ post }: { post: (typeof posts)[number] }) {
+function PostCard({ post }: { post: CommunityPost }) {
   return (
     <View style={styles.postCard}>
       <View style={styles.postTopRow}>
-        <AvatarInitials name={post.author.nickname} />
+        <AvatarInitials name={post.authorNickname} />
         <View style={styles.postMeta}>
-          <Text style={styles.postAuthor}>{post.author.nickname}</Text>
-          <Text style={styles.postBoard}>{post.boardTitle}</Text>
+          <Text style={styles.postAuthor}>{post.authorNickname}</Text>
+          <Text style={styles.postBoard}>{post.boardName}</Text>
         </View>
       </View>
 
-      <Text style={styles.postBody}>{post.body}</Text>
+      <Text style={styles.postBody}>{post.content}</Text>
 
       <View style={styles.postFooter}>
         <View style={styles.metricGroup}>
@@ -250,7 +215,7 @@ function PostCard({ post }: { post: (typeof posts)[number] }) {
         </View>
         <Pressable
           accessibilityRole="button"
-          onPress={() => router.push({ pathname: "/community/messages", params: { userId: post.author.id } })}
+          onPress={() => router.push({ pathname: "/community/messages", params: { userId: post.authorId } })}
           style={styles.messageLink}
         >
           <Ionicons name="paper-plane-outline" size={16} color={colors.accent} />
@@ -262,6 +227,64 @@ function PostCard({ post }: { post: (typeof posts)[number] }) {
 }
 
 export default function CommunityScreen() {
+  const { profile, loading: authLoading } = useAuth();
+  const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(true);
+  const [newPostText, setNewPostText] = useState("");
+  const [submittingPost, setSubmittingPost] = useState(false);
+
+  useEffect(() => {
+    const loadPosts = async () => {
+      if (!profile?.university) {
+        setPosts([]);
+        setLoadingPosts(false);
+        return;
+      }
+
+      setLoadingPosts(true);
+      const result = await fetchCommunityPosts(profile.university);
+      setPosts(result.posts);
+      setLoadingPosts(false);
+    };
+
+    loadPosts();
+  }, [profile?.university]);
+
+  const submitPost = async () => {
+    const content = newPostText.trim();
+
+    if (!content || !profile) {
+      return;
+    }
+
+    setSubmittingPost(true);
+
+    const { error } = await supabase.from("posts").insert({
+      author_id: profile.id,
+      author_nickname: profile.nickname,
+      board_name: "General",
+      university: profile.university,
+      content,
+      upvote_count: 0,
+      comment_count: 0,
+    });
+
+    setSubmittingPost(false);
+
+    if (error) {
+      return;
+    }
+
+    setNewPostText("");
+
+    if (profile?.university) {
+      setLoadingPosts(true);
+      const result = await fetchCommunityPosts(profile.university);
+      setPosts(result.posts);
+      setLoadingPosts(false);
+    }
+  };
+
   return (
     <ScreenShell title="Community" subtitle="Boards and posts for your university community.">
       <CommunityHeader />
@@ -279,11 +302,52 @@ export default function CommunityScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>General</Text>
       </View>
-      <View style={styles.postsList}>
-        {posts.map((post) => (
-          <PostCard key={post.id} post={post} />
-        ))}
+      <View style={styles.composerCard}>
+        <TextInput
+          accessibilityLabel="Write a new post"
+          editable={!authLoading && !submittingPost && Boolean(profile)}
+          multiline
+          onChangeText={setNewPostText}
+          placeholder="Share something with your university community..."
+          placeholderTextColor={colors.muted}
+          style={styles.composerInput}
+          value={newPostText}
+        />
+        <View style={styles.composerActions}>
+          <Text style={styles.composerHint}>Posting as {profile?.nickname ?? "your account"}</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={!newPostText.trim() || submittingPost || authLoading || !profile}
+            onPress={submitPost}
+            style={({ pressed }) => [
+              styles.postButton,
+              (!newPostText.trim() || submittingPost || authLoading || !profile) && styles.postButtonDisabled,
+              pressed && !(!newPostText.trim() || submittingPost || authLoading || !profile)
+                ? styles.cardPressed
+                : null,
+            ]}
+          >
+            <Text style={styles.postButtonText}>{submittingPost ? "Posting..." : "Post"}</Text>
+          </Pressable>
+        </View>
       </View>
+
+      {loadingPosts ? (
+        <View style={styles.loadingState}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.loadingText}>Loading posts...</Text>
+        </View>
+      ) : posts.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateText}>No posts yet — be the first!</Text>
+        </View>
+      ) : (
+        <View style={styles.postsList}>
+          {posts.map((post) => (
+            <PostCard key={post.id} post={post} />
+          ))}
+        </View>
+      )}
     </ScreenShell>
   );
 }
@@ -417,6 +481,73 @@ const styles = StyleSheet.create({
   },
   postsList: {
     gap: 12,
+  },
+  composerCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+  },
+  composerInput: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 22,
+    minHeight: 96,
+    textAlignVertical: "top",
+  },
+  composerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  composerHint: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: 12,
+  },
+  postButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  postButtonDisabled: {
+    opacity: 0.45,
+  },
+  postButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  loadingState: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 24,
+    borderWidth: 1,
+    gap: 12,
+    paddingVertical: 28,
+  },
+  loadingText: {
+    color: colors.muted,
+    fontSize: 14,
+  },
+  emptyState: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: 28,
+    paddingHorizontal: 18,
+  },
+  emptyStateText: {
+    color: colors.muted,
+    fontSize: 14,
+    textAlign: "center",
   },
   postCard: {
     backgroundColor: colors.surface,
