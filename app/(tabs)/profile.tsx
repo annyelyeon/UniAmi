@@ -5,9 +5,27 @@ import { AvatarInitials } from "../../src/components/AvatarInitials";
 import { ScreenShell } from "../../src/components/ScreenShell";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors } from "../../src/theme/colors";
+import { supabase } from "src/lib/supabase";
+import { useEffect, useState } from "react";
 
 export default function ProfileScreen() {
   const { profile } = useAuth();
+  const [postCount, setPostCount] = useState<number>(0);
+
+  useEffect(() => {
+    const loadPostCount = async () => {
+      if (!profile?.id) return;
+
+      const { count } = await supabase
+        .from("posts")
+        .select("*", { count: "exact", head: true })
+        .eq("author_id", profile.id);
+
+      setPostCount(count ?? 0);
+    };
+
+    loadPostCount();
+  }, [profile?.id]);
 
   if (!profile) {
     return null;
@@ -33,7 +51,7 @@ export default function ProfileScreen() {
           </View>
           {profile.isPremium ? (
             <View style={[styles.badge, styles.premiumBadge]}>
-              <Ionicons name="crow-outline" size={14} color={colors.brandRed} />
+              <Ionicons name="diamond-outline" size={14} color={colors.brandRed} />
               <Text style={[styles.badgeText, styles.premiumBadgeText]}>Premium</Text>
             </View>
           ) : null}
@@ -73,7 +91,7 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.statsGrid}>
-        <StatCard label="Posts" value={`${profile.postCount}`} />
+        <StatCard label="Posts" value={`${postCount}`} />
         <StatCard label="Stickers owned" value={`${profile.stickerPacksOwned} packs`} />
       </View>
     </ScreenShell>
