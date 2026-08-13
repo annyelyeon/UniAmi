@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AvatarInitials } from "../../src/components/AvatarInitials";
@@ -35,7 +36,12 @@ export default function ProfileScreen() {
     <ScreenShell title="Profile" subtitle="Verified identity and account overview.">
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Profile</Text>
-        <Pressable accessibilityRole="button" style={styles.headerIconButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open settings"
+          onPress={() => router.push("/about" as never)}
+          style={styles.headerIconButton}
+        >
           <Ionicons name="settings-outline" size={20} color={colors.text} />
         </Pressable>
       </View>
@@ -94,6 +100,23 @@ export default function ProfileScreen() {
         <StatCard label="Posts" value={`${postCount}`} />
         <StatCard label="Stickers owned" value={`${profile.stickerPacksOwned} packs`} />
       </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Settings</Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push("/about" as never)}
+        style={({ pressed }) => [styles.settingsRow, pressed ? styles.rowPressed : null]}
+      >
+        <View style={styles.settingsLeft}>
+          <View style={styles.settingsIconWrap}>
+            <Ionicons name="information-circle-outline" size={16} color={colors.accent} />
+          </View>
+          <Text style={styles.settingsLabel}>About</Text>
+        </View>
+        <Ionicons name="chevron-forward-outline" size={18} color={colors.muted} />
+      </Pressable>
     </ScreenShell>
   );
 }
@@ -335,5 +358,38 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     fontWeight: "700",
+  },
+  settingsRow: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  settingsLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  settingsIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceSoft,
+  },
+  settingsLabel: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  rowPressed: {
+    transform: [{ scale: 0.99 }],
+    opacity: 0.96,
   },
 });
