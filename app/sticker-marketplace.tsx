@@ -149,7 +149,7 @@ const persistOwnedPackIds = async (packIds: string[]) => {
 export default function StickerMarketplaceScreen() {
   const [packs, setPacks] = useState<StickerPack[]>(INITIAL_PACKS);
   const [selectedCategory, setSelectedCategory] = useState("All Packs");
-  const [activeTab, setActiveTab] = useState<"featured" | "trending">("featured");
+  const [activeTab, setActiveTab] = useState<"featured" | "trending" | "owned">("featured");
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredPacks = useMemo(() => {
@@ -159,7 +159,12 @@ export default function StickerMarketplaceScreen() {
       const matchesSearch =
         pack.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         pack.creator.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesTab = activeTab === "trending" ? pack.isTrending : true;
+      const matchesTab =
+        activeTab === "trending"
+          ? pack.isTrending
+          : activeTab === "owned"
+          ? pack.isOwned
+          : true;
 
       return matchesCategory && matchesSearch && matchesTab;
     });
@@ -303,6 +308,19 @@ export default function StickerMarketplaceScreen() {
                   Trending
                 </Text>
               </Pressable>
+              <Pressable
+                onPress={() => setActiveTab("owned")}
+                style={[styles.tabButton, activeTab === "owned" && styles.tabButtonActive]}
+              >
+                <Text
+                  style={[
+                    styles.tabButtonText,
+                    activeTab === "owned" && styles.tabButtonTextActive,
+                  ]}
+                >
+                  Owned
+                </Text>
+              </Pressable>
             </View>
           </View>
 
@@ -310,10 +328,14 @@ export default function StickerMarketplaceScreen() {
           <View style={styles.gridContainer}>
             {filteredPacks.length === 0 ? (
               <View style={styles.emptyStateCard}>
-                <Text style={styles.emptyStateEmoji}>📦</Text>
-                <Text style={styles.emptyStateTitle}>No sticker packs found</Text>
+                <Text style={styles.emptyStateEmoji}>{activeTab === "owned" ? "🎁" : "📦"}</Text>
+                <Text style={styles.emptyStateTitle}>
+                  {activeTab === "owned" ? "No owned sticker packs yet" : "No sticker packs found"}
+                </Text>
                 <Text style={styles.emptyStateSubtitle}>
-                  Try selecting another category or clear your search query.
+                  {activeTab === "owned"
+                    ? "No owned sticker packs yet. Browse packs to add them to your collection."
+                    : "Try selecting another category or clear your search query."}
                 </Text>
               </View>
             ) : (
@@ -537,9 +559,9 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   packCard: {
-    flexBasis: "48%",
-    flexGrow: 1,
-    minWidth: 260,
+    width: "48.5%",
+    flexBasis: "48.5%",
+    minWidth: 0,
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
     borderWidth: 1.5,

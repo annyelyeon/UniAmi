@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -56,19 +56,39 @@ async function fetchThread(currentUserId: string, partnerId: string) {
   };
 }
 
+function formatMessageTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function Bubble({
   message,
   isMine,
+  partnerNickname,
 }: {
   message: MessageRow;
   isMine: boolean;
+  partnerNickname: string;
 }) {
   return (
     <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowTheirs]}>
-      {!isMine ? <AvatarInitials name="Student" /> : null}
-      <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
-        <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : styles.bubbleTextTheirs]}>
-          {message.body}
+      {!isMine ? <AvatarInitials name={partnerNickname} /> : null}
+      <View style={[styles.bubbleWrap, isMine ? styles.bubbleWrapMine : styles.bubbleWrapTheirs]}>
+        <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
+          <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : styles.bubbleTextTheirs]}>
+            {message.body}
+          </Text>
+        </View>
+        <Text style={[styles.bubbleTimestamp, isMine ? styles.bubbleTimestampMine : styles.bubbleTimestampTheirs]}>
+          {formatMessageTime(message.created_at)}
         </Text>
       </View>
     </View>
@@ -78,11 +98,21 @@ function Bubble({
 export default function DirectMessageThreadScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { profile } = useAuth();
+  const scrollViewRef = useRef<ScrollView>(null);
   const [partnerNickname, setPartnerNickname] = useState("Student");
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace("/(tabs)/community");
+  };
 
   const loadThread = async () => {
     if (!profile?.id || !userId) {
@@ -105,6 +135,14 @@ export default function DirectMessageThreadScreen() {
   useEffect(() => {
     loadThread();
   }, [profile?.id, userId]);
+
+  useEffect(() => {
+    if (!loading) {
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      });
+    }
+  }, [loading, messages.length]);
 
   const sendMessage = async () => {
     const body = messageText.trim();
@@ -132,7 +170,7 @@ export default function DirectMessageThreadScreen() {
   };
 
   return (
-    <ScreenShell title={partnerNickname} subtitle="Simple direct message thread.">
+    <ScreenShell title="Messages" subtitle="Stay connected with your university community.">
       {loading ? (
         <View style={styles.loadingState}>
           <ActivityIndicator color={colors.accent} />
@@ -140,19 +178,58 @@ export default function DirectMessageThreadScreen() {
         </View>
       ) : (
         <View style={styles.threadCard}>
+          <View style={styles.chatHeader}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Go back to community"
+              onPress={handleBack}
+              style={({ pressed }) => [styles.backButton, pressed ? styles.cardPressed : null]}
+            >
+              <Ionicons name="arrow-back" size={18} color={colors.text} />
+            </Pressable>
+
+            <View style={styles.headerUserInfo}>
+              <AvatarInitials name={partnerNickname} />
+              <View style={styles.headerUserMeta}>
+                <Text style={styles.headerUserName}>{partnerNickname}</Text>
+                <Text style={styles.headerStatus}>Online now</Text>
+              </View>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open conversation options"
+              style={({ pressed }) => [styles.moreButton, pressed ? styles.cardPressed : null]}
+            >
+              <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
+            </Pressable>
+          </View>
+
           {messages.length > 0 ? (
-            <ScrollView contentContainerStyle={styles.threadList} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              ref={scrollViewRef}
+              contentContainerStyle={styles.threadList}
+              showsVerticalScrollIndicator={false}
+            >
               {messages.map((message) => (
-                <Bubble key={message.id} message={message} isMine={message.sender_id === profile?.id} />
+                <Bubble
+                  key={message.id}
+                  message={message}
+                  isMine={message.sender_id === profile?.id}
+                  partnerNickname={partnerNickname}
+                />
               ))}
             </ScrollView>
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>Say hi!</Text>
+              <Text style={styles.emptyStateText}>Say hi and start the conversation.</Text>
             </View>
           )}
 
           <View style={styles.composerCard}>
+            <Pressable accessibilityRole="button" style={styles.attachButton}>
+              <Ionicons name="attach-outline" size={18} color={colors.text} />
+            </Pressable>
             <TextInput
               value={messageText}
               onChangeText={setMessageText}
@@ -171,8 +248,7 @@ export default function DirectMessageThreadScreen() {
                 pressed && !(!messageText.trim() || sending || !profile?.id) ? styles.cardPressed : null,
               ]}
             >
-              <Ionicons name="paper-plane-outline" size={16} color="#FFFFFF" />
-              <Text style={styles.sendButtonText}>{sending ? "Sending..." : "Send"}</Text>
+              <Ionicons name="paper-plane" size={16} color="#FFFFFF" />
             </Pressable>
           </View>
         </View>
@@ -185,19 +261,77 @@ const styles = StyleSheet.create({
   threadCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 24,
+    borderRadius: 28,
     borderWidth: 1,
-    minHeight: 520,
+    minHeight: 560,
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 3,
+  },
+  chatHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    backgroundColor: "#FFFDFC",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
+  moreButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderWidth: 1,
+  },
+  headerUserInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerUserMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  headerUserName: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  headerStatus: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
   },
   threadList: {
     gap: 12,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 20,
   },
   bubbleRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 10,
+    gap: 8,
   },
   bubbleRowMine: {
     justifyContent: "flex-end",
@@ -205,19 +339,30 @@ const styles = StyleSheet.create({
   bubbleRowTheirs: {
     justifyContent: "flex-start",
   },
-  bubble: {
+  bubbleWrap: {
     maxWidth: "78%",
+    gap: 4,
+  },
+  bubbleWrapMine: {
+    alignItems: "flex-end",
+  },
+  bubbleWrapTheirs: {
+    alignItems: "flex-start",
+  },
+  bubble: {
     borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
   bubbleMine: {
     backgroundColor: colors.accent,
+    borderBottomRightRadius: 8,
   },
   bubbleTheirs: {
     backgroundColor: colors.background,
     borderColor: colors.border,
     borderWidth: 1,
+    borderBottomLeftRadius: 8,
   },
   bubbleText: {
     fontSize: 14,
@@ -229,14 +374,36 @@ const styles = StyleSheet.create({
   bubbleTextTheirs: {
     color: colors.text,
   },
+  bubbleTimestamp: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.muted,
+    paddingHorizontal: 4,
+  },
+  bubbleTimestampMine: {
+    color: colors.muted,
+  },
+  bubbleTimestampTheirs: {
+    color: colors.muted,
+  },
   composerCard: {
     flexDirection: "row",
     alignItems: "flex-end",
     gap: 10,
     borderTopColor: colors.border,
     borderTopWidth: 1,
-    padding: 14,
+    padding: 12,
+    backgroundColor: "#FFFBF8",
+  },
+  attachButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
   },
   composerInput: {
     flex: 1,
@@ -248,25 +415,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     color: colors.text,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
     textAlignVertical: "top",
   },
   sendButton: {
-    flexDirection: "row",
+    width: 44,
+    height: 44,
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
     backgroundColor: colors.accent,
     borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    shadowColor: "#FD0000",
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
   },
   sendButtonDisabled: {
     opacity: 0.45,
-  },
-  sendButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
   },
   emptyState: {
     alignItems: "center",
@@ -293,7 +459,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   cardPressed: {
-    transform: [{ scale: 0.99 }],
-    opacity: 0.96,
+    transform: [{ scale: 0.98 }],
+    opacity: 0.94,
   },
 });

@@ -1,5 +1,6 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AvatarInitials } from "../../src/components/AvatarInitials";
@@ -7,11 +8,30 @@ import { ScreenShell } from "../../src/components/ScreenShell";
 import { useAuth } from "../../src/context/AuthContext";
 import { colors } from "../../src/theme/colors";
 import { supabase } from "src/lib/supabase";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+const OWNED_PACKS_STORAGE_KEY = "uniami_owned_packs";
+
+const getOwnedPackIds = async (): Promise<string[]> => {
+  try {
+    const stored = await AsyncStorage.getItem(OWNED_PACKS_STORAGE_KEY);
+    if (!stored) return [];
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((value): value is string => typeof value === "string");
+  } catch {
+    return [];
+  }
+};
 
 export default function ProfileScreen() {
   const { profile } = useAuth();
   const [postCount, setPostCount] = useState<number>(0);
+  const [ownedCount, setOwnedCount] = useState<number>(0);
+  const communitiesCount = profile?.joinedClubs.length ?? 0;
+  const subjectCount = profile?.faculty ? 4 : 0;
 
   useEffect(() => {
     const loadPostCount = async () => {
@@ -27,6 +47,17 @@ export default function ProfileScreen() {
 
     loadPostCount();
   }, [profile?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const loadOwnedCount = async () => {
+        const ownedIds = await getOwnedPackIds();
+        setOwnedCount(ownedIds.length);
+      };
+
+      void loadOwnedCount();
+    }, [])
+  );
 
   if (!profile) {
     return null;
@@ -86,19 +117,30 @@ export default function ProfileScreen() {
       ) : null}
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Joined clubs</Text>
-      </View>
-      <View style={styles.clubRow}>
-        {profile.joinedClubs.map((club) => (
-          <View key={club} style={styles.clubChip}>
-            <Text style={styles.clubChipText}>{club}</Text>
-          </View>
-        ))}
+        <Text style={styles.sectionTitle}>My Activity</Text>
       </View>
 
-      <View style={styles.statsGrid}>
-        <StatCard label="Posts" value={`${postCount}`} />
-        <StatCard label="Stickers owned" value={`${profile.stickerPacksOwned} packs`} />
+      <View style={styles.activityGrid}>
+        <ActivityStatCard
+          value={`${ownedCount} packs`}
+          label="Stickers owned"
+          onPress={() => router.push("/my-stickers")}
+        />
+        <ActivityStatCard
+          value={`${postCount}`}
+          label="Posts created"
+          onPress={() => router.push("/(tabs)/community")}
+        />
+        <ActivityStatCard
+          value={`${communitiesCount}`}
+          label="Clubs & Groups"
+          onPress={() => router.push("/(tabs)/community")}
+        />
+        <ActivityStatCard
+          value={`${subjectCount}`}
+          label="Active subjects"
+          onPress={() => router.push("/(tabs)/subject-info")}
+        />
       </View>
 
       <View style={styles.sectionHeader}>
@@ -143,12 +185,24 @@ function InfoRow({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function ActivityStatCard({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.statCard}>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.activityCard, pressed ? styles.rowPressed : null]}
+    >
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -317,47 +371,36 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
   },
-  clubRow: {
+  activityGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-  },
-  clubChip: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  clubChipText: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  statsGrid: {
-    flexDirection: "row",
     gap: 12,
   },
-  statCard: {
-    flex: 1,
+  activityCard: {
+    flexBasis: "48%",
+    width: "48%",
+    minWidth: 0,
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 16,
-    gap: 4,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
     alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
   statValue: {
     color: colors.text,
     fontSize: 20,
     fontWeight: "800",
+    textAlign: "center",
   },
   statLabel: {
     color: colors.muted,
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
   },
   settingsRow: {
     backgroundColor: colors.surface,
