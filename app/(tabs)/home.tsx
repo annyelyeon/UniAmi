@@ -63,6 +63,25 @@ export default function HomeScreen() {
 
           <Pressable
             accessibilityRole="button"
+            onPress={() => router.push("/aichat")}
+            style={({ pressed }) => [styles.aiCard, pressed ? styles.cardPressed : null]}
+          >
+            <View style={styles.aiAvatar}>
+              <Text style={styles.aiAvatarText}>🤖</Text>
+            </View>
+
+            <View style={styles.aiTextWrap}>
+              <Text style={styles.aiTitle}>Ask Ami AI Companion</Text>
+              <Text style={styles.aiSubtitle}>24/7 campus tutor for assignments, study & notes</Text>
+            </View>
+
+            <View style={styles.aiActionPill}>
+              <Text style={styles.aiActionText}>Chat →</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
             onPress={() => router.push("/(tabs)/community")}
             style={({ pressed }) => [styles.communityCard, pressed ? styles.cardPressed : null]}
           >
@@ -252,6 +271,54 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  aiCard: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 22,
+    padding: 16,
+    gap: 14,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  aiAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aiAvatarText: {
+    fontSize: 22,
+  },
+  aiTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  aiTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  aiSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  aiActionPill: {
+    backgroundColor: "#FD0000",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aiActionText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
   },
   communityCard: {
     backgroundColor: colors.surface,
