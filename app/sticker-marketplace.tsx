@@ -1,324 +1,660 @@
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { ScreenShell } from "../src/components/ScreenShell";
 import { colors } from "../src/theme/colors";
-import type { StickerPack, User } from "../src/types/models";
 
-const currentUser: User = {
-  id: "user-current",
-  nickname: "Ava Chen",
-  verifiedUniversityEmail: "ava.chen@student.uni.edu.au",
-  university: "UniAmi University",
-  campus: "City",
-  faculty: "Information Technology",
-  year: 2,
-  isPremium: true,
-  premiumStatus: "premium",
-  postCount: 14,
-  stickerPacksOwned: 4,
-  joinedClubs: ["IT Society", "Hiking Club", "Chess Club"],
-  createdAt: "2026-01-10T08:30:00Z",
-  updatedAt: "2026-08-11T09:15:00Z",
-};
+interface StickerPack {
+  id: string;
+  title: string;
+  category: string;
+  creator: string;
+  creatorAvatar: string;
+  itemCount: number;
+  price: string;
+  isFree: boolean;
+  isOwned: boolean;
+  isTrending?: boolean;
+  previewEmoji: string;
+  previewColor: string;
+}
 
-const mockCreator = {
-  id: "user-sticker-creator",
-  nickname: "Mia",
-};
-
-const stickerPacks: StickerPack[] = [
-  { id: "campus-starter", name: "Campus starter pack", stickerCount: 12, priceAUD: null, creatorId: null, isFree: true },
-  { id: "exam-week-moods", name: "Exam week moods", stickerCount: 18, priceAUD: null, creatorId: null, isFree: true },
-  { id: "uni-cats", name: "Uni cats", stickerCount: 20, priceAUD: 1.99, creatorId: mockCreator.id, isFree: false },
-  { id: "deadline-panic", name: "Deadline panic", stickerCount: 16, priceAUD: 2.49, creatorId: mockCreator.id, isFree: false },
+const INITIAL_PACKS: StickerPack[] = [
+  {
+    id: "pack-1",
+    title: "Campus Starter Pack",
+    category: "Campus Life",
+    creator: "UniAmi Team",
+    creatorAvatar: "UA",
+    itemCount: 12,
+    price: "Free",
+    isFree: true,
+    isOwned: true,
+    isTrending: true,
+    previewEmoji: "🎓",
+    previewColor: "#FEF2F2",
+  },
+  {
+    id: "pack-2",
+    title: "Exam Week Moods",
+    category: "Exam Life",
+    creator: "Sarah (VU)",
+    creatorAvatar: "SV",
+    itemCount: 18,
+    price: "Free",
+    isFree: true,
+    isOwned: false,
+    isTrending: true,
+    previewEmoji: "☕",
+    previewColor: "#FFF7ED",
+  },
+  {
+    id: "pack-3",
+    title: "Night Shift & Coding",
+    category: "Tech & Code",
+    creator: "Dev Club",
+    creatorAvatar: "DC",
+    itemCount: 16,
+    price: "$1.99",
+    isFree: false,
+    isOwned: false,
+    isTrending: true,
+    previewEmoji: "💻",
+    previewColor: "#EFF6FF",
+  },
+  {
+    id: "pack-4",
+    title: "Uni Cats & Coffee",
+    category: "Cute / Kawaii",
+    creator: "Mia K.",
+    creatorAvatar: "MK",
+    itemCount: 20,
+    price: "$2.49",
+    isFree: false,
+    isOwned: false,
+    isTrending: false,
+    previewEmoji: "🐱",
+    previewColor: "#FDF2F8",
+  },
+  {
+    id: "pack-5",
+    title: "Deadline Panic Reactions",
+    category: "Study Moods",
+    creator: "Liam (RMIT)",
+    creatorAvatar: "LR",
+    itemCount: 14,
+    price: "$1.49",
+    isFree: false,
+    isOwned: false,
+    isTrending: true,
+    previewEmoji: "🔥",
+    previewColor: "#FEF2F2",
+  },
+  {
+    id: "pack-6",
+    title: "Campus Doodles & Art",
+    category: "Campus Art",
+    creator: "Art Society",
+    creatorAvatar: "AS",
+    itemCount: 22,
+    price: "$2.99",
+    isFree: false,
+    isOwned: false,
+    isTrending: false,
+    previewEmoji: "🎨",
+    previewColor: "#F5F3FF",
+  },
 ];
 
-const sectionLabels = {
-  free: "Free packs",
-  student: "By students",
+const CATEGORIES = [
+  "All Packs",
+  "Campus Life",
+  "Exam Life",
+  "Study Moods",
+  "Tech & Code",
+  "Cute / Kawaii",
+  "Campus Art",
+];
+
+const OWNED_PACKS_STORAGE_KEY = "uniami_owned_packs";
+
+const getOwnedPackIds = async (): Promise<string[]> => {
+  try {
+    const stored = await AsyncStorage.getItem(OWNED_PACKS_STORAGE_KEY);
+    if (!stored) return [];
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((value): value is string => typeof value === "string");
+  } catch {
+    return [];
+  }
+};
+
+const persistOwnedPackIds = async (packIds: string[]) => {
+  await AsyncStorage.setItem(OWNED_PACKS_STORAGE_KEY, JSON.stringify(packIds));
 };
 
 export default function StickerMarketplaceScreen() {
-  const [ownedPackIds, setOwnedPackIds] = useState<string[]>([]);
+  const [packs, setPacks] = useState<StickerPack[]>(INITIAL_PACKS);
+  const [selectedCategory, setSelectedCategory] = useState("All Packs");
+  const [activeTab, setActiveTab] = useState<"featured" | "trending">("featured");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const ownedPacks = useMemo(() => new Set(ownedPackIds), [ownedPackIds]);
+  const filteredPacks = useMemo(() => {
+    return packs.filter((pack) => {
+      const matchesCategory =
+        selectedCategory === "All Packs" || pack.category === selectedCategory;
+      const matchesSearch =
+        pack.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        pack.creator.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesTab = activeTab === "trending" ? pack.isTrending : true;
 
-  const ownPack = (packId: string) => {
-    setOwnedPackIds((current) =>
-      current.includes(packId) ? current : [...current, packId],
-    );
+      return matchesCategory && matchesSearch && matchesTab;
+    });
+  }, [packs, selectedCategory, searchQuery, activeTab]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const refreshOwnedPacks = async () => {
+        const ownedIds = await getOwnedPackIds();
+        setPacks(
+          INITIAL_PACKS.map((pack) => ({
+            ...pack,
+            isOwned: pack.isOwned || ownedIds.includes(pack.id),
+          }))
+        );
+      };
+
+      void refreshOwnedPacks();
+    }, [])
+  );
+
+  const handleAction = (pack: StickerPack) => {
+    if (pack.isOwned) return;
+
+    if (pack.isFree) {
+      // Claim free pack instantly
+      setPacks((prev) => {
+        const nextPacks = prev.map((item) =>
+          item.id === pack.id ? { ...item, isOwned: true } : item
+        );
+
+        const ownedIds = nextPacks
+          .filter((item) => item.isOwned)
+          .map((item) => item.id);
+
+        void persistOwnedPackIds(ownedIds);
+        return nextPacks;
+      });
+    } else {
+      // Route to checkout flow for paid packs
+      router.push({
+        pathname: "/sticker-checkout",
+        params: { packId: pack.id, title: pack.title, price: pack.price },
+      });
+    }
   };
 
   return (
-    <ScreenShell title="Sticker marketplace" subtitle="Browse packs for posts and notes.">
-      <View style={styles.headerRow}>
-        <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={20} color={colors.text} />
-        </Pressable>
-        <Text style={styles.headerTitle}>Sticker marketplace</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.mainWrapper}>
+          {/* Header Section */}
+          <View style={styles.headerRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.replace("/home")}
+              style={styles.backButton}
+            >
+              <Text style={styles.backButtonText}>←</Text>
+            </Pressable>
 
-      <SectionLabel label={sectionLabels.free} />
-      <View style={styles.packList}>
-        {stickerPacks
-          .filter((pack) => pack.isFree)
-          .map((pack) => (
-            <StickerPackCard
-              key={pack.id}
-              pack={pack}
-              owned={ownedPacks.has(pack.id)}
-              onOwn={() => ownPack(pack.id)}
-            />
-          ))}
-      </View>
-
-      <SectionLabel label={sectionLabels.student} />
-      <View style={styles.packList}>
-        {stickerPacks
-          .filter((pack) => !pack.isFree)
-          .map((pack) => (
-            <StickerPackCard
-              key={pack.id}
-              pack={pack}
-              owned={ownedPacks.has(pack.id)}
-              onOwn={() => ownPack(pack.id)}
-            />
-          ))}
-      </View>
-    </ScreenShell>
-  );
-}
-
-function SectionLabel({ label }: { label: string }) {
-  return <Text style={styles.sectionLabel}>{label}</Text>;
-}
-
-function StickerPackCard({
-  pack,
-  owned,
-  onOwn,
-}: {
-  pack: StickerPack;
-  owned: boolean;
-  onOwn: () => void;
-}) {
-  const isCreatorPack = !pack.isFree;
-  const byNickname = isCreatorPack ? mockCreator.nickname : null;
-  const showPremiumIncluded = isCreatorPack && currentUser.isPremium;
-
-  return (
-    <View style={styles.packCard}>
-      <View style={styles.packLeft}>
-        <View
-          style={[
-            styles.thumb,
-            pack.isFree ? styles.thumbFree : styles.thumbPaid,
-          ]}
-        >
-          <Ionicons
-            name={pack.isFree ? "happy-outline" : "sparkles-outline"}
-            size={26}
-            color={pack.isFree ? colors.accentStrong : colors.brandRed}
-          />
-        </View>
-
-        <View style={styles.packMeta}>
-          <Text style={styles.packName}>{pack.name}</Text>
-          {!pack.isFree && byNickname ? (
-            <Text style={styles.packCreator}>by {byNickname}</Text>
-          ) : null}
-          <Text style={styles.packCount}>{pack.stickerCount} stickers</Text>
-        </View>
-      </View>
-
-      <View style={styles.packRight}>
-        {owned ? (
-          <View style={styles.ownedBadge}>
-            <Text style={styles.ownedBadgeText}>Owned</Text>
+            <View style={styles.headerTitles}>
+              <Text style={styles.pageTitle}>Sticker Marketplace</Text>
+              <Text style={styles.pageSubtitle}>
+                Discover, collect, and unlock student-created sticker packs.
+              </Text>
+            </View>
           </View>
-        ) : pack.isFree ? (
-          <Pressable accessibilityRole="button" onPress={onOwn} style={styles.freeBadge}>
-            <Text style={styles.freeBadgeText}>Free</Text>
-          </Pressable>
-        ) : showPremiumIncluded ? (
-          <Pressable accessibilityRole="button" onPress={onOwn} style={styles.includedBadge}>
-            <Text style={styles.includedText}>Included with Premium</Text>
-          </Pressable>
-        ) : (
-          <>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push({ pathname: "/sticker-checkout", params: { packId: pack.id } })}
-              style={styles.priceBadge}
-            >
-              <Text style={styles.priceText}>${pack.priceAUD?.toFixed(2)}</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push({ pathname: "/sticker-ad-unlock", params: { packId: pack.id } })}
-              style={styles.adLinkRow}
-            >
-              <Ionicons name="play-outline" size={14} color={colors.accent} />
-              <Text style={styles.adLinkText}>or watch ad</Text>
-            </Pressable>
-          </>
-        )}
-      </View>
-    </View>
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search sticker packs, creators, or topics..."
+              placeholderTextColor={colors.muted}
+              style={styles.searchInput}
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable onPress={() => setSearchQuery("")} style={styles.clearSearch}>
+                <Text style={styles.clearSearchText}>✕</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* Category Filter Pills */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryScroll}
+          >
+            {CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat;
+              return (
+                <Pressable
+                  key={cat}
+                  onPress={() => setSelectedCategory(cat)}
+                  style={[styles.categoryChip, isSelected && styles.categoryChipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.categoryChipText,
+                      isSelected && styles.categoryChipTextActive,
+                    ]}
+                  >
+                    {cat}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {/* Section Sub-Header & Tabs */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Featured Packs</Text>
+            <View style={styles.tabToggleGroup}>
+              <Pressable
+                onPress={() => setActiveTab("featured")}
+                style={[styles.tabButton, activeTab === "featured" && styles.tabButtonActive]}
+              >
+                <Text
+                  style={[
+                    styles.tabButtonText,
+                    activeTab === "featured" && styles.tabButtonTextActive,
+                  ]}
+                >
+                  Recommended
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setActiveTab("trending")}
+                style={[styles.tabButton, activeTab === "trending" && styles.tabButtonActive]}
+              >
+                <Text
+                  style={[
+                    styles.tabButtonText,
+                    activeTab === "trending" && styles.tabButtonTextActive,
+                  ]}
+                >
+                  Trending
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Sticker Pack Card Grid */}
+          <View style={styles.gridContainer}>
+            {filteredPacks.length === 0 ? (
+              <View style={styles.emptyStateCard}>
+                <Text style={styles.emptyStateEmoji}>📦</Text>
+                <Text style={styles.emptyStateTitle}>No sticker packs found</Text>
+                <Text style={styles.emptyStateSubtitle}>
+                  Try selecting another category or clear your search query.
+                </Text>
+              </View>
+            ) : (
+              filteredPacks.map((pack) => (
+                <View key={pack.id} style={styles.packCard}>
+                  {/* Visual Pack Thumbnail Box */}
+                  <View
+                    style={[
+                      styles.thumbnailBox,
+                      { backgroundColor: pack.previewColor },
+                    ]}
+                  >
+                    <Text style={styles.packEmoji}>{pack.previewEmoji}</Text>
+                    <View style={styles.itemCountBadge}>
+                      <Text style={styles.itemCountText}>
+                        {pack.itemCount} stickers
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Card Content & Details */}
+                  <View style={styles.cardContent}>
+                    <Text style={styles.packTitle} numberOfLines={1}>
+                      {pack.title}
+                    </Text>
+
+                    <View style={styles.creatorRow}>
+                      <View style={styles.creatorAvatar}>
+                        <Text style={styles.avatarText}>{pack.creatorAvatar}</Text>
+                      </View>
+                      <Text style={styles.creatorName} numberOfLines={1}>
+                        {pack.creator}
+                      </Text>
+                    </View>
+
+                    {/* Action & Pricing Button */}
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => handleAction(pack)}
+                      disabled={pack.isOwned}
+                      style={[
+                        styles.actionButton,
+                        pack.isOwned
+                          ? styles.actionOwned
+                          : pack.isFree
+                          ? styles.actionFree
+                          : styles.actionPaid,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.actionButtonText,
+                          pack.isOwned && styles.actionOwnedText,
+                        ]}
+                      >
+                        {pack.isOwned ? "Owned" : pack.isFree ? "Get Free" : pack.price}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#FAF7F2",
+  },
+  scrollContainer: {
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  mainWrapper: {
+    width: "100%",
+    maxWidth: 960,
+    gap: 20,
+  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 14,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
-  headerTitle: {
+  backButtonText: {
+    fontSize: 20,
+    fontWeight: "700",
     color: colors.text,
-    fontSize: 22,
+  },
+  headerTitles: {
+    flex: 1,
+  },
+  pageTitle: {
+    fontSize: 26,
     fontWeight: "800",
+    color: colors.text,
+    letterSpacing: -0.5,
   },
-  headerSpacer: {
-    width: 40,
-  },
-  sectionLabel: {
-    color: colors.muted,
+  pageSubtitle: {
     fontSize: 13,
-    fontWeight: "800",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    paddingTop: 4,
+    fontWeight: "500",
+    color: colors.muted,
+    marginTop: 2,
   },
-  packList: {
-    gap: 12,
-  },
-  packCard: {
-    backgroundColor: colors.surface,
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  searchIcon: {
+    fontSize: 16,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.text,
+  },
+  clearSearch: {
+    padding: 4,
+  },
+  clearSearchText: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  categoryScroll: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  categoryChipActive: {
+    backgroundColor: "#FD0000",
+    borderColor: "#FD0000",
+  },
+  categoryChipText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  categoryChipTextActive: {
+    color: "#FFFFFF",
+  },
+  sectionHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginTop: 6,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.text,
+  },
+  tabToggleGroup: {
+    flexDirection: "row",
+    backgroundColor: "#EAE6DF",
+    borderRadius: 14,
+    padding: 3,
+    gap: 2,
+  },
+  tabButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 11,
+  },
+  tabButtonActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  tabButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.muted,
+  },
+  tabButtonTextActive: {
+    color: "#FD0000",
+  },
+  gridContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 16,
+    justifyContent: "flex-start",
+  },
+  packCard: {
+    flexBasis: "48%",
+    flexGrow: 1,
+    minWidth: 260,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: 14,
     gap: 12,
     shadowColor: "#000",
     shadowOpacity: 0.04,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
-  packLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minWidth: 0,
-  },
-  thumb: {
-    width: 54,
-    height: 54,
+  thumbnailBox: {
+    height: 140,
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
   },
-  thumbFree: {
-    backgroundColor: "#DCFCE7",
+  packEmoji: {
+    fontSize: 54,
   },
-  thumbPaid: {
-    backgroundColor: "#FEE2E2",
+  itemCountBadge: {
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  packMeta: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
+  itemCountText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
   },
-  packName: {
-    color: colors.text,
+  cardContent: {
+    gap: 8,
+  },
+  packTitle: {
     fontSize: 16,
     fontWeight: "800",
-  },
-  packCreator: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  packCount: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  packRight: {
-    alignItems: "flex-end",
-    gap: 6,
-  },
-  freeBadge: {
-    backgroundColor: "#DCFCE7",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  freeBadgeText: {
-    color: "#166534",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  ownedBadge: {
-    backgroundColor: "#E5E7EB",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  ownedBadgeText: {
     color: colors.text,
-    fontSize: 12,
-    fontWeight: "800",
   },
-  priceBadge: {
-    backgroundColor: "#FEE2E2",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  priceText: {
-    color: colors.brandRed,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  includedBadge: {
-    backgroundColor: "#FEE2E2",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  includedText: {
-    color: colors.brandRed,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  adLinkRow: {
+  creatorRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 8,
   },
-  adLinkText: {
-    color: colors.accent,
-    fontSize: 12,
+  creatorAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#FD0000",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    color: "#FFFFFF",
+    fontSize: 9,
     fontWeight: "800",
+  },
+  creatorName: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: "600",
+    flex: 1,
+  },
+  actionButton: {
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  actionPaid: {
+    backgroundColor: "#FD0000",
+  },
+  actionFree: {
+    backgroundColor: "#059669",
+  },
+  actionOwned: {
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  actionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  actionOwnedText: {
+    color: "#6B7280",
+  },
+  emptyStateCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: 36,
+    alignItems: "center",
+    gap: 8,
+  },
+  emptyStateEmoji: {
+    fontSize: 44,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: colors.text,
+  },
+  emptyStateSubtitle: {
+    fontSize: 13,
+    color: colors.muted,
+    textAlign: "center",
   },
 });

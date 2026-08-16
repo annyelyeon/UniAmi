@@ -97,18 +97,11 @@ export interface Note {
 
 export interface StickerPack {
   id: string;
-  creatorUserId: string;
-  title: string;
-  description: string;
-  pricing: StickerPackPricing;
-  priceCents?: number;
-  currency: "AUD";
-  commissionSplit: {
-    creatorPercent: number;
-    platformPercent: number;
-  };
-  assetUrls: string[];
-  createdAt: string;
+  name: string;
+  stickerCount: number;
+  priceAUD: number | null;
+  creatorId: string | null;
+  isFree: boolean;
 }
 
 export interface JobListing {
@@ -123,6 +116,7 @@ export interface JobListing {
   priceAUD: number | null;
   creatorId: string | null;
   isFree: boolean;
+}
 
 export interface DirectMessage {
   id: string;

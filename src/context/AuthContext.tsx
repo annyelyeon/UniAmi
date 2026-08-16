@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import type { User } from "../types/models";
-import { supabase } from "../lib/supabase";
+import { getAuthRedirectUrl, supabase } from "../lib/supabase";
 
 type SignUpInput = {
   email: string;
@@ -28,6 +28,7 @@ type AuthContextValue = {
   authError: string | null;
   signIn: (email: string, password: string) => Promise<boolean>;
   signUp: (input: SignUpInput) => Promise<{ success: boolean; error?: string }>;
+  resendVerificationEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 };
@@ -49,6 +50,28 @@ type ProfileRow = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function normalizeSupabaseAuthError(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("over_email_send_rate_limit")) {
+    return "Verification emails are rate-limited by Supabase for this project. Please wait a few minutes and try again.";
+  }
+
+  if (normalized.includes("user_already_exists")) {
+    return "An account with this email already exists. Please sign in instead.";
+  }
+
+  if (normalized.includes("invalid_credentials")) {
+    return "The email or password is invalid. Please check your details and try again.";
+  }
+
+  if (normalized.includes("rate limit") || normalized.includes("too many requests")) {
+    return "Too many verification requests were sent recently. Please wait a few minutes before trying again.";
+  }
+
+  return message;
+}
 
 function mapProfileRowToUser(row: ProfileRow): User {
   return {
@@ -200,10 +223,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (input: SignUpInput) => {
     setAuthError(null);
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: input.email,
       password: input.password,
       options: {
+        emailRedirectTo: getAuthRedirectUrl("/login"),
         data: {
           nickname: input.nickname,
           university: input.university,
@@ -219,8 +243,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (error) {
-      setAuthError(error.message);
-      return { success: false, error: error.message };
+      const friendlyMessage = normalizeSupabaseAuthError(error.message);
+      setAuthError(friendlyMessage);
+      return { success: false, error: friendlyMessage };
+    }
+
+    if (!data.user) {
+      const friendlyMessage = "Sign-up succeeded, but the verification email could not be created. Please try again.";
+      setAuthError(friendlyMessage);
+      return { success: false, error: friendlyMessage };
+    }
+
+    return { success: true };
+  };
+
+  const resendVerificationEmail = async (email: string) => {
+    setAuthError(null);
+
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: getAuthRedirectUrl("/login"),
+      },
+    });
+
+    if (error) {
+      const friendlyMessage = normalizeSupabaseAuthError(error.message);
+      setAuthError(friendlyMessage);
+      return { success: false, error: friendlyMessage };
     }
 
     return { success: true };
@@ -241,6 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authError,
       signIn,
       signUp,
+      resendVerificationEmail,
       signOut,
       refreshProfile,
     }),
