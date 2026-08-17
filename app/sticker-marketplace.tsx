@@ -10,6 +10,8 @@ import {
   View,
 } from "react-native";
 
+import { VideoWatchPlayer } from "../components/VideoWatchPlayer";
+
 interface StickerPack {
   id: string;
   title: string;
@@ -82,6 +84,7 @@ export default function StickerMarketplaceScreen() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [ownedPackIds, setOwnedPackIds] = useState<string[]>(["campus-starter"]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isVideoOpen, setIsVideoOpen] = useState(false);
 
   const toastTimerRef = useRef<any>(null);
 
@@ -122,10 +125,12 @@ export default function StickerMarketplaceScreen() {
     }, 2500);
   };
 
-  const handleEarnDiamonds = async () => {
-    const nextVal = diamonds + 10;
-    setDiamonds(nextVal);
-    await AsyncStorage.setItem("@uni_ami_diamonds", JSON.stringify(nextVal));
+  const handleEarnDiamonds = (amount: number) => {
+    setDiamonds((currentBalance) => {
+      const nextBalance = currentBalance + amount;
+      void AsyncStorage.setItem("@uni_ami_diamonds", JSON.stringify(nextBalance));
+      return nextBalance;
+    });
     showToast("🎉 +10 Diamonds added to your balance!");
   };
 
@@ -191,7 +196,7 @@ export default function StickerMarketplaceScreen() {
 
           {/* Clickable Earn Diamonds Pill */}
           <Pressable
-            onPress={handleEarnDiamonds}
+            onPress={() => setIsVideoOpen(true)}
             style={({ pressed }) => [styles.diamondPill, pressed && styles.pressed]}
           >
             <View style={styles.diamondRow}>
@@ -333,6 +338,14 @@ export default function StickerMarketplaceScreen() {
           })}
         </View>
       </ScrollView>
+
+      {isVideoOpen && (
+        <VideoWatchPlayer
+          visible={isVideoOpen}
+          onClose={() => setIsVideoOpen(false)}
+          onRewardEarned={handleEarnDiamonds}
+        />
+      )}
     </View>
   );
 }
