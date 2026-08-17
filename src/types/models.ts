@@ -23,6 +23,7 @@ export interface Subject {
   groupProjectRequired: boolean;
   groupSize?: number;
   prerequisites: string[];
+  createdBy?: string | null;
 }
 
 export interface User {
@@ -35,7 +36,7 @@ export interface User {
   year: YearLevel;
   isPremium: boolean;
   premiumStatus: PremiumStatus;
-  postCount: number;
+  createdBy?: string | null;
   stickerPacksOwned: number;
   gemsBalance: number;
   joinedClubs: string[];

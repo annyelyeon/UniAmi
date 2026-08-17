@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -16,6 +17,42 @@ import { supabase } from "../../src/lib/supabase";
 import { colors } from "../../src/theme/colors";
 import type { Subject, SubjectReview } from "../../src/types/models";
 
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renderHighlighted(text: string, term: string) {
+  const t = term.trim();
+  if (!t) return <Text style={{ color: colors.text }}>{text}</Text>;
+
+  const lower = text.toLowerCase();
+  const search = t.toLowerCase();
+  const parts: Array<{ text: string; match: boolean }> = [];
+  let idx = 0;
+  while (idx < text.length) {
+    const found = lower.indexOf(search, idx);
+    if (found === -1) {
+      parts.push({ text: text.slice(idx), match: false });
+      break;
+    }
+    if (found > idx) {
+      parts.push({ text: text.slice(idx, found), match: false });
+    }
+    parts.push({ text: text.slice(found, found + search.length), match: true });
+    idx = found + search.length;
+  }
+
+  return (
+    <Text>
+      {parts.map((p, i) => (
+        <Text key={i} style={p.match ? { color: colors.accentStrong, fontWeight: "800" } : { color: colors.text }}>
+          {p.text}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
 type SubjectRow = {
   code: string;
   title: string;
@@ -26,6 +63,7 @@ type SubjectRow = {
   group_project_required: boolean;
   group_size: number | null;
   prerequisites: string[];
+  created_by?: string | null;
 };
 
 type SubjectReviewRow = {
@@ -53,41 +91,66 @@ async function fetchSubjectByCode(code: string) {
   const trimmedCode = code.trim().toUpperCase();
 
   if (!trimmedCode) {
-    return { subject: null as Subject | null, reviews: [] as SubjectReviewView[] };
+    return { subject: null as Subject | null, reviews: [] as SubjectReviewView[], fuzzyMatches: [] as Subject[] };
   }
 
-  const { data: subjectData, error: subjectError } = await supabase
+  // try exact match first
+  const { data: exactData, error: exactError } = await supabase
     .from("subjects")
-    .select("code, title, average_rating, review_count, assessment_type, num_assignments, group_project_required, group_size, prerequisites")
+    .select(
+      "code, title, average_rating, review_count, assessment_type, num_assignments, group_project_required, group_size, prerequisites, created_by",
+    )
     .eq("code", trimmedCode)
     .maybeSingle();
 
-  if (subjectError || !subjectData) {
-    return { subject: null as Subject | null, reviews: [] as SubjectReviewView[] };
+  if (exactError) {
+    return { subject: null as Subject | null, reviews: [] as SubjectReviewView[], fuzzyMatches: [] as Subject[] };
   }
 
-  const { data: reviewData, error: reviewError } = await supabase
-    .from("subject_reviews")
-    .select("id, subject_code, author_id, text, created_at")
-    .eq("subject_code", trimmedCode)
-    .order("created_at", { ascending: false });
+  if (exactData) {
+    // fetch reviews for the exact match
+    const reviewCode = (exactData as SubjectRow).code ?? trimmedCode;
+    const { data: reviewData, error: reviewError } = await supabase
+      .from("subject_reviews")
+      .select("id, subject_code, author_id, text, created_at")
+      .eq("subject_code", reviewCode)
+      .order("created_at", { ascending: false });
 
-  if (reviewError) {
+    if (reviewError) {
+      return { subject: mapSubjectRow(exactData as SubjectRow), reviews: [], fuzzyMatches: [] as Subject[] };
+    }
+
     return {
-      subject: mapSubjectRow(subjectData as SubjectRow),
-      reviews: [],
+      subject: mapSubjectRow(exactData as SubjectRow),
+      reviews: (reviewData as SubjectReviewRow[] | null | undefined)?.map((review) => ({
+        id: review.id,
+        subjectCode: review.subject_code,
+        authorId: review.author_id,
+        text: review.text,
+        createdAt: review.created_at,
+      })) ?? [],
+      fuzzyMatches: [] as Subject[],
     };
   }
 
+  // no exact match -> fetch fuzzy matches (multiple) and return them for user selection
+  const { data: fuzzyList, error: fuzzyError } = await supabase
+    .from("subjects")
+    .select(
+      "code, title, average_rating, review_count, assessment_type, num_assignments, group_project_required, group_size, prerequisites, created_by",
+    )
+    .ilike("code", `%${trimmedCode}%`)
+    .order("code", { ascending: true })
+    .limit(10);
+
+  if (fuzzyError || !fuzzyList || fuzzyList.length === 0) {
+    return { subject: null as Subject | null, reviews: [], fuzzyMatches: [] as Subject[] };
+  }
+
   return {
-    subject: mapSubjectRow(subjectData as SubjectRow),
-    reviews: (reviewData as SubjectReviewRow[] | null | undefined)?.map((review) => ({
-      id: review.id,
-      subjectCode: review.subject_code,
-      authorId: review.author_id,
-      text: review.text,
-      createdAt: review.created_at,
-    })) ?? [],
+    subject: null as Subject | null,
+    reviews: [],
+    fuzzyMatches: (fuzzyList as SubjectRow[]).map(mapSubjectRow),
   };
 }
 
@@ -102,6 +165,7 @@ function mapSubjectRow(row: SubjectRow): Subject {
     groupProjectRequired: row.group_project_required,
     groupSize: row.group_size ?? undefined,
     prerequisites: row.prerequisites,
+      createdBy: row.created_by ?? undefined,
   };
 }
 
@@ -112,13 +176,24 @@ export default function SubjectInfoScreen() {
   const [subject, setSubject] = useState<Subject | null>(null);
   const [reviews, setReviews] = useState<SubjectReviewView[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fuzzyMatches, setFuzzyMatches] = useState<Subject[]>([]);
   const [reviewText, setReviewText] = useState("");
   const [postingReview, setPostingReview] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newAssessment, setNewAssessment] = useState<Subject["assessmentType"]>("assignment");
+  const [newNumAssignments, setNewNumAssignments] = useState<number>(0);
+  const [newGroupRequired, setNewGroupRequired] = useState(false);
+  const [newGroupSize, setNewGroupSize] = useState<number | undefined>(undefined);
+  const [newPrereqs, setNewPrereqs] = useState("");
+  const [submittingNew, setSubmittingNew] = useState(false);
 
   const loadSubject = async (code: string) => {
     const result = await fetchSubjectByCode(code);
-    setSubject(result.subject);
-    setReviews(result.reviews);
+    setSubject(result.subject ?? null);
+    setReviews(result.reviews ?? []);
+    setFuzzyMatches(result.fuzzyMatches ?? []);
     setLoading(false);
   };
 
@@ -136,6 +211,19 @@ export default function SubjectInfoScreen() {
     setSubmittedCode(nextCode);
     setLoading(true);
   };
+
+  // Debounced live search: when the user stops typing, perform lookup.
+  useEffect(() => {
+    const code = searchText.trim().toUpperCase();
+    if (!code) return;
+
+    const timer = setTimeout(() => {
+      setSubmittedCode(code);
+      setLoading(true);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   const submitReview = async () => {
     const text = reviewText.trim();
@@ -162,13 +250,77 @@ export default function SubjectInfoScreen() {
     await loadSubject(subject.code);
   };
 
+  const submitNewSubject = async () => {
+    if (!profile?.id) return;
+    const code = newCode.trim().toUpperCase();
+    if (!code || !newTitle.trim()) return;
+
+    setSubmittingNew(true);
+
+    const payload: any = {
+      code,
+      title: newTitle.trim(),
+      assessment_type: newAssessment,
+      num_assignments: Number(newNumAssignments) || 0,
+      group_project_required: Boolean(newGroupRequired),
+      group_size: newGroupRequired ? (newGroupSize ?? null) : null,
+      prerequisites: newPrereqs ? newPrereqs.split(",").map((s) => s.trim()).filter(Boolean) : [] ,
+      created_by: profile.id,
+    };
+
+    const { error } = await supabase.from("subjects").insert(payload);
+
+    setSubmittingNew(false);
+
+    if (error) {
+      Alert.alert("Error", error.message ?? "Failed to create subject");
+      return;
+    }
+
+    setShowAddForm(false);
+    setNewCode("");
+    setNewTitle("");
+    setNewAssessment("assignment");
+    setNewNumAssignments(0);
+    setNewGroupRequired(false);
+    setNewGroupSize(undefined);
+    setNewPrereqs("");
+
+    setSubmittedCode(code);
+    setLoading(true);
+  };
+
+  const deleteSubject = async (code: string) => {
+    Alert.alert("Delete subject", `Delete ${code}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase.from("subjects").delete().eq("code", code);
+          if (error) {
+            Alert.alert("Error", error.message ?? "Failed to delete subject");
+            return;
+          }
+
+          setSubject(null);
+        },
+      },
+    ]);
+  };
+
   return (
     <ScreenShell title="Subject info" subtitle="Browse crowd-sourced subject reviews.">
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Subject info</Text>
-        <Pressable accessibilityRole="button" onPress={submitSearch} style={styles.headerIconButton}>
-          <Ionicons name="search-outline" size={20} color={colors.text} />
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Pressable accessibilityRole="button" onPress={() => setShowAddForm((s) => !s)} style={styles.headerIconButton}>
+            <Ionicons name="add-outline" size={20} color={colors.text} />
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={submitSearch} style={styles.headerIconButton}>
+            <Ionicons name="search-outline" size={20} color={colors.text} />
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.searchCard}>
@@ -184,6 +336,67 @@ export default function SubjectInfoScreen() {
         />
       </View>
 
+      {showAddForm ? (
+        <View style={styles.subjectCard}>
+          <Text style={{ color: colors.text, fontWeight: "800", marginBottom: 8 }}>Add subject</Text>
+          <TextInput value={newCode} onChangeText={setNewCode} placeholder="Code (e.g. COMP1000)" placeholderTextColor={colors.muted} style={[styles.searchInput, { marginBottom: 8 }]} autoCapitalize="characters" />
+          <TextInput value={newTitle} onChangeText={setNewTitle} placeholder="Title" placeholderTextColor={colors.muted} style={[styles.searchInput, { marginBottom: 8 }]} />
+          <TextInput value={String(newNumAssignments)} onChangeText={(v) => setNewNumAssignments(Number(v) || 0)} placeholder="Number of assignments" placeholderTextColor={colors.muted} keyboardType="numeric" style={[styles.searchInput, { marginBottom: 8 }]} />
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 8 }}>
+            <Pressable onPress={() => setNewGroupRequired((g) => !g)} style={{ padding: 8, backgroundColor: newGroupRequired ? colors.surface : colors.surfaceSoft, borderRadius: 8 }}>
+              <Text style={{ color: colors.text }}>{newGroupRequired ? "Group project: Yes" : "Group project: No"}</Text>
+            </Pressable>
+            {newGroupRequired ? (
+              <TextInput value={newGroupSize ? String(newGroupSize) : ""} onChangeText={(v) => setNewGroupSize(Number(v) || undefined)} placeholder="Group size" placeholderTextColor={colors.muted} keyboardType="numeric" style={[styles.searchInput, { flex: 1 }]} />
+            ) : null}
+          </View>
+          <TextInput value={newPrereqs} onChangeText={setNewPrereqs} placeholder="Prerequisites (comma separated)" placeholderTextColor={colors.muted} style={[styles.searchInput, { marginBottom: 12 }]} />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable accessibilityRole="button" onPress={submitNewSubject} style={[styles.reviewPostButton, submittingNew && styles.reviewPostButtonDisabled]}>
+              <Text style={styles.reviewPostButtonText}>{submittingNew ? "Adding..." : "Add subject"}</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => setShowAddForm(false)} style={[styles.headerIconButton, { alignItems: "center", justifyContent: "center" }]}>
+              <Text style={{ color: colors.muted }}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      {fuzzyMatches.length > 0 ? (
+        <View style={[styles.subjectCard, { marginTop: 12 }]}>
+          <Text style={{ color: colors.text, fontWeight: "800", marginBottom: 8 }}>Search results</Text>
+          {fuzzyMatches.map((m) => (
+            <Pressable
+              key={m.code}
+              onPress={() => {
+                setFuzzyMatches([]);
+                setSearchText(m.code);
+                setSubmittedCode(m.code);
+                setLoading(true);
+              }}
+              style={({ pressed }) => [
+                { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, borderBottomColor: colors.border, borderBottomWidth: 1 },
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.resultCode}>{renderHighlighted(m.code, searchText)}</Text>
+                  <Text style={styles.resultTitle}>{renderHighlighted(m.title, searchText)}</Text>
+                </View>
+                <View style={styles.resultMeta}>
+                  <View style={styles.resultMetaRow}>
+                    <Ionicons name="star" size={14} color={colors.accentStrong} />
+                    <Text style={styles.resultMetaValue}>{m.averageRating?.toFixed ? m.averageRating.toFixed(1) : "0.0"}</Text>
+                  </View>
+                  <Text style={styles.resultMetaSub}>{m.reviewCount ?? 0} reviews</Text>
+                </View>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
       {loading ? (
         <View style={styles.loadingState}>
           <ActivityIndicator color={colors.accent} />
@@ -197,12 +410,19 @@ export default function SubjectInfoScreen() {
               <Text style={styles.subjectTitle}>{subject.title}</Text>
             </View>
 
-            <View style={styles.ratingBlock}>
-              <View style={styles.ratingRow}>
-                <Ionicons name="star" size={16} color={colors.accent} />
-                <Text style={styles.ratingValue}>{subject.averageRating.toFixed(1)}</Text>
+            <View style={{ alignItems: "flex-end", gap: 8 }}>
+              <View style={styles.ratingBlock}>
+                <View style={styles.ratingRow}>
+                  <Ionicons name="star" size={16} color={colors.accent} />
+                  <Text style={styles.ratingValue}>{subject.averageRating.toFixed(1)}</Text>
+                </View>
+                <Text style={styles.reviewCount}>{subject.reviewCount} reviews</Text>
               </View>
-              <Text style={styles.reviewCount}>{subject.reviewCount} reviews</Text>
+              {profile?.id && subject.createdBy === profile.id ? (
+                <Pressable accessibilityRole="button" onPress={() => deleteSubject(subject.code)} style={styles.headerIconButton}>
+                  <Ionicons name="trash-outline" size={16} color={colors.muted} />
+                </Pressable>
+              ) : null}
             </View>
           </View>
 
@@ -221,8 +441,8 @@ export default function SubjectInfoScreen() {
         </View>
       ) : (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyStateTitle}>No results for {submittedCode}</Text>
-          <Text style={styles.emptyStateText}>Try another subject code to load details and reviews.</Text>
+          <Text style={styles.emptyStateTitle}>No matches for "{searchText.trim()}"</Text>
+          <Text style={styles.emptyStateText}>Try the full subject code (e.g. COMP3308) or check spelling.</Text>
         </View>
       )}
 
@@ -338,6 +558,33 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
+  },
+  resultCode: {
+    color: colors.accentStrong,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  resultTitle: {
+    color: colors.text,
+    fontSize: 13,
+  },
+  resultMeta: {
+    alignItems: "flex-end",
+    marginLeft: 12,
+  },
+  resultMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  resultMetaValue: {
+    color: colors.text,
+    fontWeight: "800",
+    marginLeft: 6,
+  },
+  resultMetaSub: {
+    color: colors.muted,
+    fontSize: 12,
   },
   subjectTopRow: {
     flexDirection: "row",
