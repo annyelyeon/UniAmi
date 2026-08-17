@@ -16,9 +16,9 @@ interface OwnedStickerPack {
   previewColor: string;
 }
 
-const INITIAL_PACKS: OwnedStickerPack[] = [
+const ALL_PACKS: OwnedStickerPack[] = [
   {
-    id: "pack-1",
+    id: "campus-starter",
     title: "Campus Starter Pack",
     category: "Campus Life",
     itemCount: 12,
@@ -26,7 +26,7 @@ const INITIAL_PACKS: OwnedStickerPack[] = [
     previewColor: "#FEF2F2",
   },
   {
-    id: "pack-2",
+    id: "exam-week",
     title: "Exam Week Moods",
     category: "Exam Life",
     itemCount: 18,
@@ -34,40 +34,40 @@ const INITIAL_PACKS: OwnedStickerPack[] = [
     previewColor: "#FFF7ED",
   },
   {
-    id: "pack-3",
-    title: "Night Shift & Coding",
+    id: "tech-code",
+    title: "Code & Bugs Pack",
     category: "Tech & Code",
-    itemCount: 16,
+    itemCount: 10,
     previewEmoji: "💻",
     previewColor: "#EFF6FF",
   },
   {
-    id: "pack-4",
-    title: "Uni Cats & Coffee",
+    id: "cute-mascot",
+    title: "Cute Mascot Expressions",
     category: "Cute / Kawaii",
-    itemCount: 20,
+    itemCount: 10,
     previewEmoji: "🐱",
     previewColor: "#FDF2F8",
   },
   {
-    id: "pack-5",
-    title: "Deadline Panic Reactions",
+    id: "study-moods",
+    title: "Lo-Fi Study Moods",
     category: "Study Moods",
-    itemCount: 14,
+    itemCount: 8,
     previewEmoji: "🔥",
     previewColor: "#FEF2F2",
   },
   {
-    id: "pack-6",
-    title: "Campus Doodles & Art",
+    id: "campus-art",
+    title: "Creative Arts Guild",
     category: "Campus Art",
-    itemCount: 22,
+    itemCount: 8,
     previewEmoji: "🎨",
     previewColor: "#F5F3FF",
   },
 ];
 
-const OWNED_PACKS_STORAGE_KEY = "uniami_owned_packs";
+const OWNED_PACKS_STORAGE_KEY = "@uni_ami_owned_packs";
 
 const getOwnedPackIds = async (): Promise<string[]> => {
   try {
@@ -91,7 +91,7 @@ export default function MyStickersScreen() {
       const loadOwnedPacks = async () => {
         const ownedIds = await getOwnedPackIds();
 
-        const packs = INITIAL_PACKS.filter((pack) => ownedIds.includes(pack.id));
+        const packs = ALL_PACKS.filter((pack) => ownedIds.includes(pack.id));
         setOwnedPacks(packs);
       };
 

@@ -10,7 +10,7 @@ import { colors } from "../../src/theme/colors";
 import { supabase } from "src/lib/supabase";
 import { useCallback, useEffect, useState } from "react";
 
-const OWNED_PACKS_STORAGE_KEY = "uniami_owned_packs";
+const OWNED_PACKS_STORAGE_KEY = "@uni_ami_owned_packs";
 
 const getOwnedPackIds = async (): Promise<string[]> => {
   try {
@@ -189,7 +189,7 @@ export default function ProfileScreen() {
 
       <View style={styles.activityGrid}>
         <ActivityStatCard
-          value={`${ownedCount} packs`}
+          value={`${ownedCount} ${ownedCount === 1 ? "pack" : "packs"}`}
           label="Stickers owned"
           onPress={() => router.push("/my-stickers")}
         />

@@ -11,7 +11,7 @@ import { colors } from "../src/theme/colors";
 
 type PaymentMethod = "apple" | "gems";
 
-const OWNED_PACKS_STORAGE_KEY = "uniami_owned_packs";
+const OWNED_PACKS_STORAGE_KEY = "@uni_ami_owned_packs";
 
 const getOwnedPackIds = async (): Promise<string[]> => {
   try {
@@ -33,10 +33,15 @@ const persistOwnedPackIds = async (packIds: string[]) => {
 
 export default function StickerCheckoutScreen() {
   const { profile, refreshProfile } = useAuth();
-  const { packId, title, price, paymentMode } = useLocalSearchParams<{
+  const { id, packId, title, price, icon, creator, category, gems, paymentMode } = useLocalSearchParams<{
+    id?: string;
     packId?: string;
     title?: string;
     price?: string;
+    icon?: string;
+    creator?: string;
+    category?: string;
+    gems?: string;
     paymentMode?: string;
   }>();
 
@@ -47,110 +52,90 @@ export default function StickerCheckoutScreen() {
   const [isPaid, setIsPaid] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
 
-  const priceAUD = Number.parseFloat(typeof price === "string" ? price : "1.20");
+  const priceAUD = Number.parseFloat(typeof price === "string" ? price.replace(/[^0-9.]/g, "") : "1.20");
   const safePrice = Number.isFinite(priceAUD) ? priceAUD : 1.2;
-  const gemsNeeded = 240;
+  const gemsNeeded = Number.isFinite(Number(gems)) && Number(gems) > 0 ? Number(gems) : 240;
   const userGems = profile?.gemsBalance ?? 0;
   const missingGems = Math.max(0, gemsNeeded - userGems);
-  const packName = typeof title === "string" && title.trim() ? title : packId ? packId.replace(/-/g, " ") : "Sticker Pack";
+  const purchasedPackId = typeof packId === "string" ? packId : typeof id === "string" ? id : "";
+  const packName = typeof title === "string" && title.trim() ? title : purchasedPackId ? purchasedPackId.replace(/-/g, " ") : "Sticker Pack";
+  const packCreator = typeof creator === "string" && creator.trim() ? creator : "UniAmi Creator";
+  const packCategory = typeof category === "string" && category.trim() ? category : "Sticker Pack";
+  const packIcon = typeof icon === "string" && icon.trim() ? icon : "📦";
 
   const canAffordWithGems = userGems >= gemsNeeded;
 
   const selectedMethodLabel = paymentMethod === "apple" ? "Apple / Google Pay ($1.20 AUD)" : "Pay with 240 Gems";
 
-  const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
+  const [invoiceNumber] = useState(() => `INV-UA-${Math.floor(10000 + Math.random() * 90000)}`);
   const dateStr = new Date().toLocaleDateString("en-AU");
   const gst = (safePrice * 0.1).toFixed(2);
 
   const summaryItems = useMemo(
     () => [
       { label: "Sticker Pack", value: packName },
+      { label: "Creator", value: packCreator },
+      { label: "Category", value: packCategory },
       { label: "Payment", value: selectedMethodLabel },
       { label: "Creator revenue", value: "$1.00 AUD" },
       { label: "Platform margin", value: "$0.20 AUD" },
     ],
-    [packName, selectedMethodLabel]
+    [packCategory, packCreator, packName, selectedMethodLabel]
   );
 
   const handlePay = async () => {
-    const purchasedPackId = typeof packId === "string" ? packId : "";
     if (!purchasedPackId) return;
 
     setIsProcessing(true);
     setPaymentMessage(null);
 
-    if (paymentMethod === "gems") {
-      if (!canAffordWithGems) {
-        setPaymentMessage(`You need ${missingGems} more gems to unlock this pack.`);
-        setIsProcessing(false);
-        return;
-      }
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({ gems_balance: userGems - gemsNeeded, updated_at: new Date().toISOString() })
-        .eq("id", profile?.id);
-
-      if (error) {
-        setPaymentMessage("Unable to process gem payment right now. Please try again.");
-        setIsProcessing(false);
-        return;
-      }
-
-      const { error: purchaseError } = await supabase.from("sticker_purchases").insert({
-        user_id: profile?.id,
-        sticker_pack_id: purchasedPackId,
-        payment_type: "gems",
-        amount_aud: 1.2,
-        creator_cut: 1.0,
-        platform_cut: 0.2,
-        status: "completed",
-      });
-
-      if (purchaseError) {
-        setPaymentMessage("Purchase was not recorded. Please contact support.");
-        setIsProcessing(false);
-        return;
-      }
-
-      await refreshProfile();
+    if (paymentMethod === "gems" && !canAffordWithGems) {
+      setPaymentMessage(`You need ${missingGems} more gems to unlock this pack.`);
       setIsProcessing(false);
-      setIsPaid(true);
+      return;
+    }
 
+    try {
       const existingIds = await getOwnedPackIds();
-      const nextIds = existingIds.includes(purchasedPackId)
-        ? existingIds
-        : [...existingIds, purchasedPackId];
-
+      const nextIds = existingIds.includes(purchasedPackId) ? existingIds : [...existingIds, purchasedPackId];
       await persistOwnedPackIds(nextIds);
-      return;
-    }
 
-    const { error: purchaseError } = await supabase.from("sticker_purchases").insert({
-      user_id: profile?.id,
-      sticker_pack_id: purchasedPackId,
-      payment_type: "cash",
-      amount_aud: safePrice,
-      creator_cut: 1.0,
-      platform_cut: 0.2,
-      status: "completed",
-    });
+      if (paymentMethod === "gems") {
+        await AsyncStorage.setItem("@uni_ami_diamonds", JSON.stringify(userGems - gemsNeeded));
+      }
 
-    if (purchaseError) {
-      setPaymentMessage("Payment succeeded but the purchase record failed to save.");
+      try {
+        if (paymentMethod === "gems" && profile?.id) {
+          await supabase
+            .from("profiles")
+            .update({ gems_balance: userGems - gemsNeeded, updated_at: new Date().toISOString() })
+            .eq("id", profile.id);
+        }
+
+        if (profile?.id) {
+          const { error } = await supabase.from("sticker_purchases").insert({
+            user_id: profile.id,
+            sticker_pack_id: purchasedPackId,
+            payment_type: paymentMethod === "gems" ? "gems" : "cash",
+            amount_aud: paymentMethod === "gems" ? 0 : safePrice,
+            creator_cut: paymentMethod === "gems" ? 0 : 1.0,
+            platform_cut: paymentMethod === "gems" ? 0 : 0.2,
+            status: "completed",
+          });
+          if (error) console.warn("Purchase record saved locally only:", error.message);
+        }
+      } catch (remoteError) {
+        console.warn("Remote purchase record skipped; local ownership was saved:", remoteError);
+      }
+
+      if (paymentMethod === "gems") await refreshProfile();
+      setIsPaid(true);
+    } catch (localError) {
+      console.warn("Local purchase save error:", localError);
+      setPaymentMessage("Unable to save this purchase. Please try again.");
+    } finally {
       setIsProcessing(false);
-      return;
     }
-
-    setIsProcessing(false);
-    setIsPaid(true);
-
-    const existingIds = await getOwnedPackIds();
-    const nextIds = existingIds.includes(purchasedPackId)
-      ? existingIds
-      : [...existingIds, purchasedPackId];
-
-    await persistOwnedPackIds(nextIds);
   };
 
   return (
@@ -258,7 +243,13 @@ export default function StickerCheckoutScreen() {
                 </View>
 
                 <View style={styles.invoiceBox}>
-                  <Text style={styles.invoiceRowBold}>UniAmi Pty Ltd</Text>
+                  <View style={styles.receiptItemRow}>
+                    <Text style={styles.receiptItemIcon}>{packIcon}</Text>
+                    <View>
+                      <Text style={styles.invoiceRowBold}>UniAmi Pty Ltd</Text>
+                      <Text style={styles.invoiceRow}>Tax Invoice / Receipt</Text>
+                    </View>
+                  </View>
                   <Text style={styles.invoiceRow}>ABN: 12 345 678 910 (Temporary)</Text>
                   <Text style={styles.invoiceRow}>Invoice No: {invoiceNumber}</Text>
                   <Text style={styles.invoiceRow}>Date: {dateStr}</Text>
@@ -269,14 +260,19 @@ export default function StickerCheckoutScreen() {
                     </Text>
                   ))}
                   <View style={styles.divider} />
-                  <Text style={styles.invoiceTotal}>Total Paid: ${safePrice.toFixed(2)} AUD</Text>
+                  <Text style={styles.invoiceTotal}>
+                    Total Paid: {paymentMethod === "gems" ? `${gemsNeeded} 💎` : `$${safePrice.toFixed(2)} AUD`}
+                  </Text>
                 </View>
 
                 <Pressable
                   style={styles.doneBtn}
-                  onPress={() => router.push("/sticker-marketplace")}
+                  onPress={() => router.replace("/sticker-marketplace")}
                 >
                   <Text style={styles.doneBtnText}>Return to Marketplace</Text>
+                </Pressable>
+                <Pressable style={styles.myStickersBtn} onPress={() => router.replace("/my-stickers")}>
+                  <Text style={styles.myStickersBtnText}>View My Stickers</Text>
                 </Pressable>
               </>
             )}
@@ -509,6 +505,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
   },
+  receiptItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 6,
+  },
+  receiptItemIcon: {
+    fontSize: 28,
+  },
   invoiceRow: {
     fontSize: 13,
     color: colors.muted,
@@ -545,6 +550,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: "center",
     fontWeight: "500",
+  },
+  myStickersBtn: {
+    width: "100%",
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#C7D2FE",
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  myStickersBtnText: {
+    color: "#4F46E5",
+    fontSize: 14,
+    fontWeight: "800",
   },
   abnText: {
     color: colors.muted,
