@@ -90,11 +90,11 @@ function BoardCard({
   onLeave: (id: string) => void;
 }) {
   return (
-    <View style={{ width: "48%" }}>
+    <View style={styles.boardCard}>
       <Pressable
         accessibilityRole="button"
         onPress={() => router.push(`/community/board/${community.id}`)}
-        style={({ pressed }) => [styles.boardCard, pressed ? styles.cardPressed : null]}
+        style={({ pressed }) => (pressed ? styles.cardPressed : null)}
       >
         <View style={styles.boardIconWrap}>
           <Ionicons name="layers-outline" size={20} color={colors.accent} />
@@ -103,21 +103,16 @@ function BoardCard({
         <Text style={styles.boardMembers}>{(community.member_count ?? 0).toLocaleString()} members</Text>
       </Pressable>
 
-      <View style={{ height: 8 }} />
       <Pressable
         accessibilityRole="button"
         onPress={() => (isMember ? onLeave(community.id) : onJoin(community.id))}
         style={({ pressed }) => [
-          {
-            backgroundColor: isMember ? colors.surface : colors.accent,
-            paddingVertical: 8,
-            borderRadius: 12,
-            alignItems: "center",
-          },
+          styles.boardButton,
           pressed ? styles.cardPressed : null,
+          isMember ? { backgroundColor: colors.surface } : null,
         ]}
       >
-        <Text style={{ color: isMember ? colors.text : "#fff", fontWeight: "800" }}>
+        <Text style={[styles.boardButtonText, isMember ? { color: colors.text } : null]}>
           {isMember ? "Joined" : "Join"}
         </Text>
       </Pressable>
@@ -336,6 +331,19 @@ const styles = StyleSheet.create({
   boardMembers: {
     color: colors.muted,
     fontSize: 13,
+  },
+  boardButton: {
+    marginTop: 12,
+    width: "100%",
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accent,
+  },
+  boardButtonText: {
+    color: "#fff",
+    fontWeight: "800",
   },
   postsList: {
     gap: 12,
