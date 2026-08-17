@@ -1,113 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ScreenShell } from "../../src/components/ScreenShell";
-import { AvatarInitials } from "../../src/components/AvatarInitials";
 import { useAuth } from "../../src/context/AuthContext";
 import { supabase } from "../../src/lib/supabase";
 import { colors } from "../../src/theme/colors";
-import type { Board, Post, User } from "../../src/types/models";
+import type { User } from "../../src/types/models";
+import CommunityPosts from "../../src/components/CommunityPosts";
+import type { Community } from "../../src/types/models";
 
-const boards: Board[] = [
-  {
-    id: "engineering-it",
-    university: "UniAmi University",
-    type: "faculty",
-    title: "Engineering & IT",
-    description: "Faculty board for coursework, opportunities, and support.",
-    faculty: "Engineering & IT",
-    memberCount: 1280,
-    createdByUserId: "user-admin",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: "business",
-    university: "UniAmi University",
-    type: "faculty",
-    title: "Business",
-    description: "Faculty board for business students and study groups.",
-    faculty: "Business",
-    memberCount: 940,
-    createdByUserId: "user-admin",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: "design",
-    university: "UniAmi University",
-    type: "faculty",
-    title: "Design",
-    description: "Creative discussions, resources, and portfolio feedback.",
-    faculty: "Design",
-    memberCount: 620,
-    createdByUserId: "user-admin",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: "health",
-    university: "UniAmi University",
-    type: "faculty",
-    title: "Health",
-    description: "Discussion board for health programs and placements.",
-    faculty: "Health",
-    memberCount: 730,
-    createdByUserId: "user-admin",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-];
-
-
-type PostRow = {
-  id: string;
-  author_id: string;
-  author_nickname: string;
-  board_name: string;
-  university: string;
-  content: string;
-  upvote_count: number;
-  comment_count: number;
-  created_at: string;
-};
-
-type CommunityPost = Post & {
-  authorNickname: string;
-};
-
-async function fetchCommunityPosts(university: string) {
-  const { data, error } = await supabase
-    .from("posts")
-    .select(
-      "id, author_id, author_nickname, board_name, university, content, upvote_count, comment_count, created_at",
-    )
-    .eq("university", university)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return { posts: [] as CommunityPost[], error };
-  }
-
-  const posts = (data as PostRow[] | null | undefined)?.map((post) => ({
-    id: post.id,
-    authorId: post.author_id,
-    authorNickname: post.author_nickname,
-    boardName: post.board_name,
-    university: post.university,
-    content: post.content,
-    upvoteCount: post.upvote_count,
-    commentCount: post.comment_count,
-    createdAt: post.created_at,
-  })) ?? [];
-
-  return { posts, error: null };
-}
 
 function CommunityHeader() {
   return (
@@ -175,115 +78,94 @@ function RecruitingBanner() {
   );
 }
 
-function BoardCard({ board }: { board: Board }) {
+function BoardCard({
+  community,
+  isMember,
+  onJoin,
+  onLeave,
+}: {
+  community: Community;
+  isMember?: boolean;
+  onJoin: (id: string) => void;
+  onLeave: (id: string) => void;
+}) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => router.push(`/community/board/${board.id}`)}
-      style={({ pressed }) => [styles.boardCard, pressed ? styles.cardPressed : null]}
-    >
-      <View style={styles.boardIconWrap}>
-        <Ionicons name="layers-outline" size={20} color={colors.accent} />
-      </View>
-      <Text style={styles.boardTitle}>{board.title}</Text>
-      <Text style={styles.boardMembers}>{board.memberCount.toLocaleString()} members</Text>
-    </Pressable>
-  );
-}
-
-function PostCard({ post }: { post: CommunityPost }) {
-  return (
-    <View style={styles.postCard}>
-      <View style={styles.postTopRow}>
-        <AvatarInitials name={post.authorNickname} />
-        <View style={styles.postMeta}>
-          <Text style={styles.postAuthor}>{post.authorNickname}</Text>
-          <Text style={styles.postBoard}>{post.boardName}</Text>
+    <View style={{ width: "48%" }}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push(`/community/board/${community.id}`)}
+        style={({ pressed }) => [styles.boardCard, pressed ? styles.cardPressed : null]}
+      >
+        <View style={styles.boardIconWrap}>
+          <Ionicons name="layers-outline" size={20} color={colors.accent} />
         </View>
-      </View>
+        <Text style={styles.boardTitle}>{community.name}</Text>
+        <Text style={styles.boardMembers}>{(community.member_count ?? 0).toLocaleString()} members</Text>
+      </Pressable>
 
-      <Text style={styles.postBody}>{post.content}</Text>
-
-      <View style={styles.postFooter}>
-        <View style={styles.metricGroup}>
-          <Ionicons name="arrow-up-outline" size={16} color={colors.muted} />
-          <Text style={styles.metricText}>{post.upvoteCount}</Text>
-        </View>
-        <View style={styles.metricGroup}>
-          <Ionicons name="chatbubble-outline" size={16} color={colors.muted} />
-          <Text style={styles.metricText}>{post.commentCount}</Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push(`/community/messages/${post.authorId}`)}
-          style={styles.messageLink}
-        >
-          <Ionicons name="paper-plane-outline" size={16} color={colors.accent} />
-          <Text style={styles.messageLinkText}>Message</Text>
-        </Pressable>
-      </View>
+      <View style={{ height: 8 }} />
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => (isMember ? onLeave(community.id) : onJoin(community.id))}
+        style={({ pressed }) => [
+          {
+            backgroundColor: isMember ? colors.surface : colors.accent,
+            paddingVertical: 8,
+            borderRadius: 12,
+            alignItems: "center",
+          },
+          pressed ? styles.cardPressed : null,
+        ]}
+      >
+        <Text style={{ color: isMember ? colors.text : "#fff", fontWeight: "800" }}>
+          {isMember ? "Joined" : "Join"}
+        </Text>
+      </Pressable>
     </View>
   );
 }
 
 export default function CommunityScreen() {
   const { profile, loading: authLoading } = useAuth();
-  const [posts, setPosts] = useState<CommunityPost[]>([]);
-  const [loadingPosts, setLoadingPosts] = useState(true);
-  const [newPostText, setNewPostText] = useState("");
-  const [submittingPost, setSubmittingPost] = useState(false);
+  const [facultyBoards, setFacultyBoards] = useState<Community[]>([]);
+  const [clubBoards, setClubBoards] = useState<Community[]>([]);
+  const [memberships, setMemberships] = useState<Record<string, true>>({});
 
   useEffect(() => {
-    const loadPosts = async () => {
-      if (!profile?.university) {
-        setPosts([]);
-        setLoadingPosts(false);
-        return;
-      }
-
-      setLoadingPosts(true);
-      const result = await fetchCommunityPosts(profile.university);
-      setPosts(result.posts);
-      setLoadingPosts(false);
+    const loadBoards = async () => {
+      const { data } = await supabase.from("communities").select("id, name, type, description, member_count");
+      const all = (data ?? []) as Community[];
+      setFacultyBoards(all.filter((c) => c.type === "faculty"));
+      setClubBoards(all.filter((c) => c.type === "club"));
     };
 
-    loadPosts();
-  }, [profile?.university]);
+    const loadMemberships = async () => {
+      if (!profile?.id) return;
+      const { data } = await supabase.from("community_memberships").select("community_id").eq("user_id", profile.id);
+      const map: Record<string, true> = {};
+      (data ?? []).forEach((r: any) => { map[r.community_id] = true; });
+      setMemberships(map);
+    };
 
-  const submitPost = async () => {
-    const content = newPostText.trim();
+    void loadBoards();
+    void loadMemberships();
+  }, [profile?.id]);
 
-    if (!content || !profile) {
-      return;
-    }
-
-    setSubmittingPost(true);
-
-    const { error } = await supabase.from("posts").insert({
-      author_id: profile.id,
-      author_nickname: profile.nickname,
-      board_name: "General",
-      university: profile.university,
-      content,
-      upvote_count: 0,
-      comment_count: 0,
-    });
-
-    setSubmittingPost(false);
-
-    if (error) {
-      return;
-    }
-
-    setNewPostText("");
-
-    if (profile?.university) {
-      setLoadingPosts(true);
-      const result = await fetchCommunityPosts(profile.university);
-      setPosts(result.posts);
-      setLoadingPosts(false);
-    }
+  const joinCommunity = async (communityId: string) => {
+    if (!profile) return;
+    await supabase.from("community_memberships").insert({ user_id: profile.id, community_id: communityId });
+    setMemberships((m) => ({ ...m, [communityId]: true }));
   };
+
+  const leaveCommunity = async (communityId: string) => {
+    if (!profile) return;
+    await supabase.from("community_memberships").delete().match({ user_id: profile.id, community_id: communityId });
+    setMemberships((m) => { const copy = { ...m }; delete copy[communityId]; return copy; });
+  };
+
+  // posts are handled by the shared CommunityPosts component
+
+  // Post composition is handled inside the CommunityPosts component
 
   return (
     <ScreenShell title="Community" subtitle="Boards and posts for your university community.">
@@ -294,60 +176,36 @@ export default function CommunityScreen() {
         <Text style={styles.sectionTitle}>Faculty boards</Text>
       </View>
       <View style={styles.boardGrid}>
-        {boards.map((board) => (
-          <BoardCard key={board.id} board={board} />
+        {facultyBoards.map((board) => (
+          <BoardCard
+            key={board.id}
+            community={board}
+            isMember={Boolean(memberships[board.id])}
+            onJoin={joinCommunity}
+            onLeave={leaveCommunity}
+          />
+        ))}
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Clubs</Text>
+      </View>
+      <View style={styles.boardGrid}>
+        {clubBoards.map((board) => (
+          <BoardCard
+            key={board.id}
+            community={board}
+            isMember={Boolean(memberships[board.id])}
+            onJoin={joinCommunity}
+            onLeave={leaveCommunity}
+          />
         ))}
       </View>
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>General</Text>
       </View>
-      <View style={styles.composerCard}>
-        <TextInput
-          accessibilityLabel="Write a new post"
-          editable={!authLoading && !submittingPost && Boolean(profile)}
-          multiline
-          onChangeText={setNewPostText}
-          placeholder="Share something with your university community..."
-          placeholderTextColor={colors.muted}
-          style={styles.composerInput}
-          value={newPostText}
-        />
-        <View style={styles.composerActions}>
-          <Text style={styles.composerHint}>Posting as {profile?.nickname ?? "your account"}</Text>
-          <Pressable
-            accessibilityRole="button"
-            disabled={!newPostText.trim() || submittingPost || authLoading || !profile}
-            onPress={submitPost}
-            style={({ pressed }) => [
-              styles.postButton,
-              (!newPostText.trim() || submittingPost || authLoading || !profile) && styles.postButtonDisabled,
-              pressed && !(!newPostText.trim() || submittingPost || authLoading || !profile)
-                ? styles.cardPressed
-                : null,
-            ]}
-          >
-            <Text style={styles.postButtonText}>{submittingPost ? "Posting..." : "Post"}</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {loadingPosts ? (
-        <View style={styles.loadingState}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.loadingText}>Loading posts...</Text>
-        </View>
-      ) : posts.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>No posts yet — be the first!</Text>
-        </View>
-      ) : (
-        <View style={styles.postsList}>
-          {posts.map((post) => (
-            <PostCard key={post.id} post={post} />
-          ))}
-        </View>
-      )}
+      <CommunityPosts />
     </ScreenShell>
   );
 }

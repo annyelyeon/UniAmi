@@ -6,7 +6,7 @@ import { colors } from "../theme/colors";
 
 type ScreenShellProps = {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   children?: ReactNode;
 };
 

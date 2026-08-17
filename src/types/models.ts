@@ -58,12 +58,22 @@ export interface Board {
 export interface Post {
   id: string;
   authorId: string;
-  boardName: string;
+  authorNickname?: string;
+  boardName?: string;
   university: string;
   content: string;
   upvoteCount: number;
   commentCount: number;
   createdAt: string;
+}
+
+export interface Community {
+  id: string;
+  name: string;
+  type: BoardType;
+  description?: string;
+  member_count?: number;
+  created_at?: string;
 }
 
 export interface Comment {

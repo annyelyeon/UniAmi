@@ -30,7 +30,8 @@ export default function ProfileScreen() {
   const { profile } = useAuth();
   const [postCount, setPostCount] = useState<number>(0);
   const [ownedCount, setOwnedCount] = useState<number>(0);
-  const communitiesCount = profile?.joinedClubs.length ?? 0;
+  const [communitiesCount, setCommunitiesCount] = useState<number>(0);
+  const [joinedCommunities, setJoinedCommunities] = useState<any[]>([]);
   const subjectCount = profile?.faculty ? 4 : 0;
 
   useEffect(() => {
@@ -46,6 +47,44 @@ export default function ProfileScreen() {
     };
 
     loadPostCount();
+  }, [profile?.id]);
+
+  useEffect(() => {
+    const loadCommunitiesCount = async () => {
+      if (!profile?.id) return;
+      const { count } = await supabase
+        .from("community_memberships")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", profile.id);
+
+      setCommunitiesCount(count ?? 0);
+    };
+
+    void loadCommunitiesCount();
+  }, [profile?.id]);
+
+  useEffect(() => {
+    const loadJoined = async () => {
+      if (!profile?.id) {
+        setJoinedCommunities([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("community_memberships")
+        .select("community_id(id, name, type, member_count)")
+        .eq("user_id", profile.id)
+        .limit(10);
+
+      if (error) {
+        setJoinedCommunities([]);
+        return;
+      }
+
+      setJoinedCommunities((data ?? []).map((r: any) => r.community_id));
+    };
+
+    void loadJoined();
   }, [profile?.id]);
 
   useFocusEffect(
@@ -120,6 +159,34 @@ export default function ProfileScreen() {
         <Text style={styles.sectionTitle}>My Activity</Text>
       </View>
 
+      <View style={{ marginTop: 12 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <Text style={[styles.sectionTitle, { fontSize: 16 }]}>Joined clubs</Text>
+          <Pressable onPress={() => router.push("/profile/joined-communities")}>
+            <Text style={{ color: colors.accent, fontWeight: "800" }}>See all</Text>
+          </Pressable>
+        </View>
+
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {joinedCommunities.length === 0 ? (
+            <Text style={{ color: colors.muted }}>You haven't joined any clubs yet.</Text>
+          ) : (
+            joinedCommunities.map((c) => (
+              <Pressable
+                key={c.id}
+                onPress={() => router.push(`/community/board/${c.id}`)}
+                style={({ pressed }) => [
+                  styles.chip,
+                  pressed ? styles.rowPressed : null,
+                ]}
+              >
+                <Text style={styles.chipText}>{c.name}</Text>
+              </Pressable>
+            ))
+          )}
+        </View>
+      </View>
+
       <View style={styles.activityGrid}>
         <ActivityStatCard
           value={`${ownedCount} packs`}
@@ -134,7 +201,7 @@ export default function ProfileScreen() {
         <ActivityStatCard
           value={`${communitiesCount}`}
           label="Clubs & Groups"
-          onPress={() => router.push("/(tabs)/community")}
+          onPress={() => router.push("/profile/joined-communities")}
         />
         <ActivityStatCard
           value={`${subjectCount}`}
@@ -434,5 +501,17 @@ const styles = StyleSheet.create({
   rowPressed: {
     transform: [{ scale: 0.99 }],
     opacity: 0.96,
+  },
+  chip: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  chipText: {
+    color: colors.text,
+    fontWeight: "700",
   },
 });
