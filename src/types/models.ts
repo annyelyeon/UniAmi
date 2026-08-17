@@ -37,6 +37,7 @@ export interface User {
   premiumStatus: PremiumStatus;
   postCount: number;
   stickerPacksOwned: number;
+  gemsBalance: number;
   joinedClubs: string[];
   createdAt: string;
   updatedAt: string;

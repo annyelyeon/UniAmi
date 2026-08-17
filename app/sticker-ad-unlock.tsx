@@ -1,35 +1,73 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { useAuth } from "../src/context/AuthContext";
+import { supabase } from "../src/lib/supabase";
 import { ScreenShell } from "../src/components/ScreenShell";
 import { colors } from "../src/theme/colors";
 
+const TOTAL_GEMS_FOR_PACK = 240;
+const AD_GEM_REWARD = 10;
+const AD_COUNTDOWN_SECONDS = 5;
+
 export default function StickerAdUnlockScreen() {
-  const { packId } = useLocalSearchParams<{ packId: string }>();
-  
-  // Starting balance for demo
-  const [gems, setGems] = useState(230);
+  const { packId } = useLocalSearchParams<{ packId?: string }>();
+  const { profile, refreshProfile } = useAuth();
+
+  const [gems, setGems] = useState<number>(profile?.gemsBalance ?? 0);
   const [isWatching, setIsWatching] = useState(false);
+  const [countdown, setCountdown] = useState(AD_COUNTDOWN_SECONDS);
   const [isUnlocked, setIsUnlocked] = useState(false);
 
-  const gemsRequired = 240; // 24 ads * $0.05 = $1.20 value
+  useEffect(() => {
+    setGems(profile?.gemsBalance ?? 0);
+  }, [profile?.gemsBalance]);
+
+  useEffect(() => {
+    if (!isWatching) return;
+
+    if (countdown <= 0) {
+      setIsWatching(false);
+      setCountdown(AD_COUNTDOWN_SECONDS);
+      const nextGems = gems + AD_GEM_REWARD;
+      setGems(nextGems);
+
+      void (async () => {
+        const userId = profile?.id;
+        if (!userId) return;
+
+        const { error } = await supabase
+          .from("profiles")
+          .update({ gems_balance: nextGems, updated_at: new Date().toISOString() })
+          .eq("id", userId);
+
+        if (!error) {
+          await refreshProfile();
+        }
+      })();
+      return;
+    }
+
+    const timer = setTimeout(() => setCountdown((prev) => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, gems, isWatching, profile?.id, refreshProfile]);
 
   const handleWatchAd = () => {
+    if (isWatching) return;
     setIsWatching(true);
-    setTimeout(() => {
-      setIsWatching(false);
-      setGems((prev) => prev + 10);
-    }, 2000);
+    setCountdown(AD_COUNTDOWN_SECONDS);
   };
 
   const handleRedeem = () => {
-    if (gems >= gemsRequired) {
-      setGems((prev) => prev - gemsRequired);
-      setIsUnlocked(true);
-    }
+    if (gems < TOTAL_GEMS_FOR_PACK) return;
+    setIsUnlocked(true);
   };
+
+  const progress = Math.min((gems / TOTAL_GEMS_FOR_PACK) * 100, 100);
+  const adsNeeded = Math.max(0, Math.ceil((TOTAL_GEMS_FOR_PACK - gems) / AD_GEM_REWARD));
+  const goalText = `${gems} / ${TOTAL_GEMS_FOR_PACK} Gems — ${adsNeeded} more ad${adsNeeded === 1 ? "" : "s"} to unlock your next sticker!`;
 
   return (
     <ScreenShell
@@ -46,7 +84,6 @@ export default function StickerAdUnlockScreen() {
 
       {!isUnlocked ? (
         <View style={styles.card}>
-          {/* Gem Wallet */}
           <View style={styles.walletBox}>
             <View style={styles.walletRow}>
               <Ionicons name="diamond" size={28} color="#0284C7" />
@@ -58,22 +95,19 @@ export default function StickerAdUnlockScreen() {
             <Text style={styles.walletRate}>1 Ad = 10 Gems ($0.05 AUD Value)</Text>
           </View>
 
-          {/* Goal Progress */}
           <View style={styles.goalBox}>
-            <Text style={styles.goalTitle}>Unlock: {packId?.replace("-", " ") || "Sticker Pack"}</Text>
-            <Text style={styles.goalTarget}>Target: {gemsRequired} Gems (24 Short Ads)</Text>
+            <Text style={styles.goalTitle}>Unlock: {packId?.replace(/-/g, " ") || "Sticker Pack"}</Text>
+            <Text style={styles.goalTarget}>{goalText}</Text>
             <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${Math.min((gems / gemsRequired) * 100, 100)}%` }]} />
+              <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
             </View>
-            <Text style={styles.goalProgressText}>{gems} / {gemsRequired} Gems Collected</Text>
           </View>
 
-          {/* Watch Ad Action */}
           <Pressable style={styles.adBtn} onPress={handleWatchAd} disabled={isWatching}>
             {isWatching ? (
               <View style={styles.loadingRow}>
                 <ActivityIndicator color="#FFF" />
-                <Text style={styles.adBtnText}>Playing 5s Ad (+10 Gems)...</Text>
+                <Text style={styles.adBtnText}>Ad countdown: {countdown}s (+10 Gems)</Text>
               </View>
             ) : (
               <View style={styles.loadingRow}>
@@ -83,19 +117,18 @@ export default function StickerAdUnlockScreen() {
             )}
           </Pressable>
 
-          {/* Redeem Button */}
           <Pressable
-            style={[styles.redeemBtn, gems < gemsRequired && styles.redeemBtnDisabled]}
+            style={[styles.redeemBtn, gems < TOTAL_GEMS_FOR_PACK && styles.redeemBtnDisabled]}
             onPress={handleRedeem}
-            disabled={gems < gemsRequired}
+            disabled={gems < TOTAL_GEMS_FOR_PACK}
           >
             <Text style={styles.redeemBtnText}>
-              {gems >= gemsRequired ? "Redeem 240 Gems to Unlock" : `Need ${gemsRequired - gems} More Gems`}
+              {gems >= TOTAL_GEMS_FOR_PACK ? "Redeem 240 Gems to Unlock" : `Need ${TOTAL_GEMS_FOR_PACK - gems} More Gems`}
             </Text>
           </Pressable>
 
           <Text style={styles.creatorNote}>
-            ✓ Student creator still receives full $1.00 payout funded via ad impressions.
+            ✓ Student creator receives $1.00 AUD and UniAmi keeps a $0.20 AUD platform margin.
           </Text>
         </View>
       ) : (
@@ -104,7 +137,7 @@ export default function StickerAdUnlockScreen() {
             <Ionicons name="gift" size={54} color={colors.accent} />
             <Text style={styles.successTitle}>Pack Unlocked!</Text>
             <Text style={styles.successText}>
-              240 Gems successfully redeemed for {packId?.replace("-", " ") || "Sticker Pack"}.
+              240 Gems successfully redeemed for {packId?.replace(/-/g, " ") || "Sticker Pack"}.
             </Text>
           </View>
           <Pressable style={styles.doneBtn} onPress={() => router.push("/sticker-marketplace")}>

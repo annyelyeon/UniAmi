@@ -11,6 +11,7 @@ create table if not exists public.profiles (
   is_premium boolean not null default false,
   post_count integer not null default 0,
   sticker_packs_owned integer not null default 0,
+  gems_balance integer not null default 0,
   joined_clubs text[] not null default '{}'::text[],
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -36,6 +37,7 @@ begin
     is_premium,
     post_count,
     sticker_packs_owned,
+    gems_balance,
     joined_clubs
   ) values (
     new.id,
@@ -48,6 +50,7 @@ begin
     coalesce((new.raw_user_meta_data->>'isPremium')::boolean, false),
     coalesce((new.raw_user_meta_data->>'postCount')::integer, 0),
     coalesce((new.raw_user_meta_data->>'stickerPacksOwned')::integer, 0),
+    coalesce((new.raw_user_meta_data->>'gemsBalance')::integer, 0),
     coalesce(
       (
         select array_agg(value)
@@ -63,6 +66,7 @@ begin
     campus = excluded.campus,
     faculty = excluded.faculty,
     year = excluded.year,
+    gems_balance = excluded.gems_balance,
     updated_at = now();
 
   return new;

@@ -2,10 +2,10 @@ import { router } from "expo-router";
 import { useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -51,11 +51,95 @@ const fetchAIResponse = async (userText: string): Promise<string> => {
   return data?.reply || "No response received.";
 };
 
+function renderInlineFormatting(rawText: string) {
+  const parts = rawText.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <Text key={index} style={styles.boldText}>
+          {part.slice(2, -2)}
+        </Text>
+      );
+    }
+    return part;
+  });
+}
+
+function FormattedAmiText({ content }: { content: string }) {
+  const lines = content.split("\n");
+
+  return (
+    <View style={styles.formattedContainer}>
+      {lines.map((line, i) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <View key={i} style={styles.spacer} />;
+        }
+
+        // Header parsing (### or ##)
+        if (trimmed.startsWith("### ")) {
+          return (
+            <Text key={i} style={styles.heading3}>
+              {renderInlineFormatting(trimmed.replace(/^###\s+/, ""))}
+            </Text>
+          );
+        }
+        if (trimmed.startsWith("## ") || trimmed.startsWith("# ")) {
+          return (
+            <Text key={i} style={styles.heading2}>
+              {renderInlineFormatting(trimmed.replace(/^#{1,2}\s+/, ""))}
+            </Text>
+          );
+        }
+
+        // Bullet point parsing (* or + or -)
+        const bulletMatch = trimmed.match(/^[\*\+\-]\s+(.*)$/);
+        if (bulletMatch) {
+          return (
+            <View key={i} style={styles.bulletRow}>
+              <Text style={styles.bulletDot}>•</Text>
+              <Text style={styles.bulletContent}>
+                {renderInlineFormatting(bulletMatch[1])}
+              </Text>
+            </View>
+          );
+        }
+
+        // Numbered list parsing (1. or 2.)
+        const numMatch = trimmed.match(/^(\d+[\.\)])\s+(.*)$/);
+        if (numMatch) {
+          return (
+            <View key={i} style={styles.bulletRow}>
+              <Text style={styles.numberPrefix}>{numMatch[1]}</Text>
+              <Text style={styles.bulletContent}>
+                {renderInlineFormatting(numMatch[2])}
+              </Text>
+            </View>
+          );
+        }
+
+        // Regular prose line
+        return (
+          <Text key={i} style={styles.amiMessageText}>
+            {renderInlineFormatting(line)}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function AIChatScreen() {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const flatListRef = useRef<FlatList>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+  };
 
   const sendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
@@ -69,6 +153,7 @@ export default function AIChatScreen() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    scrollToBottom();
     setInputText("");
     setIsLoading(true);
 
@@ -81,9 +166,7 @@ export default function AIChatScreen() {
       };
 
       setMessages((prev) => [...prev, amiMessage]);
-      requestAnimationFrame(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      });
+      scrollToBottom();
     };
 
     try {
@@ -108,7 +191,7 @@ export default function AIChatScreen() {
         <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
-            <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <Pressable onPress={() => router.replace("/(tabs)/home")} style={styles.backButton}>
               <Text style={styles.backButtonText}>←</Text>
             </Pressable>
             <View style={styles.headerTitleContainer}>
@@ -121,17 +204,16 @@ export default function AIChatScreen() {
             </View>
           </View>
 
-          {/* Messages Feed */}
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
+          <ScrollView
+            ref={scrollViewRef}
             contentContainerStyle={styles.messagesList}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            renderItem={({ item }) => {
+            showsVerticalScrollIndicator={false}
+          >
+            {messages.map((item) => {
               const isUser = item.sender === "user";
               return (
                 <View
+                  key={item.id}
                   style={[
                     styles.messageWrapper,
                     isUser ? styles.userMessageWrapper : styles.amiMessageWrapper,
@@ -143,14 +225,11 @@ export default function AIChatScreen() {
                       isUser ? styles.userBubble : styles.amiBubble,
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.messageText,
-                        isUser ? styles.userMessageText : styles.amiMessageText,
-                      ]}
-                    >
-                      {item.text}
-                    </Text>
+                    {isUser ? (
+                      <Text style={styles.userMessageText}>{item.text}</Text>
+                    ) : (
+                      <FormattedAmiText content={item.text} />
+                    )}
                     <Text
                       style={[
                         styles.timestampText,
@@ -162,16 +241,15 @@ export default function AIChatScreen() {
                   </View>
                 </View>
               );
-            }}
-            ListFooterComponent={
-              isLoading ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="small" color="#FD0000" />
-                  <Text style={styles.loadingText}>Ami is thinking...</Text>
-                </View>
-              ) : null
-            }
-          />
+            })}
+
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#FD0000" />
+                <Text style={styles.loadingText}>Ami is thinking...</Text>
+              </View>
+            ) : null}
+          </ScrollView>
 
           {/* Quick Suggestion Chips */}
           <View style={styles.suggestionsContainer}>
@@ -319,21 +397,76 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderBottomLeftRadius: 4,
   },
-  messageText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
   userMessageText: {
     color: "#FFFFFF",
     fontWeight: "500",
+    fontSize: 14,
+    lineHeight: 20,
   },
   amiMessageText: {
     color: colors.text,
-    fontWeight: "500",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "400",
+  },
+  formattedContainer: {
+    gap: 3,
+  },
+  boldText: {
+    fontWeight: "700",
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  heading2: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+    lineHeight: 20,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  heading3: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+    lineHeight: 20,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  bulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingLeft: 2,
+  },
+  bulletDot: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+    fontWeight: "700",
+    marginRight: 6,
+  },
+  numberPrefix: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.text,
+    fontWeight: "700",
+    marginRight: 6,
+  },
+  bulletContent: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.text,
+    fontWeight: "400",
+  },
+  spacer: {
+    height: 6,
   },
   timestampText: {
     fontSize: 10,
     alignSelf: "flex-end",
+    marginTop: 4,
   },
   userTimestamp: {
     color: "rgba(255, 255, 255, 0.7)",

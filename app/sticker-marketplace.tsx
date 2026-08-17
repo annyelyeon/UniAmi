@@ -1,8 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,7 +11,9 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useAuth } from "../src/context/AuthContext";
 import { colors } from "../src/theme/colors";
+import { RewardedAdModal } from "../components/RewardedAdModal";
 
 interface StickerPack {
   id: string;
@@ -127,6 +128,7 @@ const CATEGORIES = [
 ];
 
 const OWNED_PACKS_STORAGE_KEY = "uniami_owned_packs";
+const DIAMONDS_STORAGE_KEY = "@uni_ami_diamonds";
 
 const getOwnedPackIds = async (): Promise<string[]> => {
   try {
@@ -147,10 +149,29 @@ const persistOwnedPackIds = async (packIds: string[]) => {
 };
 
 export default function StickerMarketplaceScreen() {
+  const { profile, refreshProfile } = useAuth();
   const [packs, setPacks] = useState<StickerPack[]>(INITIAL_PACKS);
   const [selectedCategory, setSelectedCategory] = useState("All Packs");
   const [activeTab, setActiveTab] = useState<"featured" | "trending" | "owned">("featured");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isAdOpen, setIsAdOpen] = useState(false);
+  const [diamonds, setDiamonds] = useState(0);
+
+  const gemBalance = profile?.gemsBalance ?? 0;
+
+  useEffect(() => {
+    const loadDiamonds = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(DIAMONDS_STORAGE_KEY);
+        const parsed = stored ? Number(JSON.parse(stored)) : NaN;
+        setDiamonds(Number.isFinite(parsed) && parsed >= 0 ? parsed : gemBalance);
+      } catch {
+        setDiamonds(gemBalance);
+      }
+    };
+
+    void loadDiamonds();
+  }, [gemBalance]);
 
   const filteredPacks = useMemo(() => {
     return packs.filter((pack) => {
@@ -183,14 +204,14 @@ export default function StickerMarketplaceScreen() {
       };
 
       void refreshOwnedPacks();
-    }, [])
+      void refreshProfile();
+    }, [refreshProfile])
   );
 
   const handleAction = (pack: StickerPack) => {
     if (pack.isOwned) return;
 
     if (pack.isFree) {
-      // Claim free pack instantly
       setPacks((prev) => {
         const nextPacks = prev.map((item) =>
           item.id === pack.id ? { ...item, isOwned: true } : item
@@ -203,13 +224,23 @@ export default function StickerMarketplaceScreen() {
         void persistOwnedPackIds(ownedIds);
         return nextPacks;
       });
-    } else {
-      // Route to checkout flow for paid packs
-      router.push({
-        pathname: "/sticker-checkout",
-        params: { packId: pack.id, title: pack.title, price: pack.price },
-      });
+      return;
     }
+
+    router.push({
+      pathname: "/sticker-checkout",
+      params: {
+        packId: pack.id,
+        title: pack.title,
+        price: pack.price,
+      },
+    });
+  };
+
+  const handleRewardEarned = async (amount: number) => {
+    const nextBalance = diamonds + amount;
+    setDiamonds(nextBalance);
+    await AsyncStorage.setItem(DIAMONDS_STORAGE_KEY, JSON.stringify(nextBalance));
   };
 
   return (
@@ -234,21 +265,31 @@ export default function StickerMarketplaceScreen() {
             </View>
           </View>
 
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search sticker packs, creators, or topics..."
-              placeholderTextColor={colors.muted}
-              style={styles.searchInput}
-            />
-            {searchQuery.length > 0 ? (
-              <Pressable onPress={() => setSearchQuery("")} style={styles.clearSearch}>
-                <Text style={styles.clearSearchText}>✕</Text>
-              </Pressable>
-            ) : null}
+          <View style={styles.topRow}>
+            <View style={styles.searchContainer}>
+              <Text style={styles.searchIcon}>🔍</Text>
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search sticker packs, creators, or topics..."
+                placeholderTextColor={colors.muted}
+                style={styles.searchInput}
+              />
+              {searchQuery.length > 0 ? (
+                <Pressable onPress={() => setSearchQuery("")} style={styles.clearSearch}>
+                  <Text style={styles.clearSearchText}>✕</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setIsAdOpen(true)}
+              style={styles.gemBalancePill}
+            >
+              <Text style={styles.gemBalanceText}>{diamonds} 💎</Text>
+              <Text style={styles.gemEarnText}>Earn +10 💎</Text>
+            </Pressable>
           </View>
 
           {/* Category Filter Pills */}
@@ -371,29 +412,47 @@ export default function StickerMarketplaceScreen() {
                       </Text>
                     </View>
 
-                    {/* Action & Pricing Button */}
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => handleAction(pack)}
-                      disabled={pack.isOwned}
-                      style={[
-                        styles.actionButton,
-                        pack.isOwned
-                          ? styles.actionOwned
-                          : pack.isFree
-                          ? styles.actionFree
-                          : styles.actionPaid,
-                      ]}
-                    >
-                      <Text
+                    <View style={styles.purchaseActions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => handleAction(pack)}
+                        disabled={pack.isOwned}
                         style={[
-                          styles.actionButtonText,
-                          pack.isOwned && styles.actionOwnedText,
+                          styles.actionButton,
+                          styles.primaryAction,
+                          pack.isOwned && styles.actionOwned,
                         ]}
                       >
-                        {pack.isOwned ? "Owned" : pack.isFree ? "Get Free" : pack.price}
-                      </Text>
-                    </Pressable>
+                        <Text
+                          style={[
+                            styles.actionButtonText,
+                            pack.isOwned && styles.actionOwnedText,
+                          ]}
+                        >
+                          {pack.isOwned ? "Owned" : "Buy $1.20 AUD"}
+                        </Text>
+                      </Pressable>
+
+                      {!pack.isOwned ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => {
+                            router.push({
+                              pathname: "/sticker-checkout",
+                              params: {
+                                packId: pack.id,
+                                title: pack.title,
+                                price: "1.20",
+                                paymentMode: "gems",
+                              },
+                            });
+                          }}
+                          style={[styles.secondaryAction]}
+                        >
+                          <Text style={styles.secondaryActionText}>Unlock with 240 💎</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
                   </View>
                 </View>
               ))
@@ -401,6 +460,14 @@ export default function StickerMarketplaceScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {isAdOpen && (
+        <RewardedAdModal
+          visible={isAdOpen}
+          onRewardEarned={handleRewardEarned}
+          onClose={() => setIsAdOpen(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -460,7 +527,13 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 2,
   },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   searchContainer: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
@@ -630,12 +703,53 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
   },
+  gemBalancePill: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minWidth: 110,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  gemBalanceText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  gemEarnText: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  purchaseActions: {
+    gap: 8,
+    marginTop: 4,
+  },
   actionButton: {
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 10,
-    marginTop: 4,
+  },
+  primaryAction: {
+    backgroundColor: colors.accent,
+  },
+  secondaryAction: {
+    backgroundColor: "#FFF5F5",
+    borderWidth: 1,
+    borderColor: "#F9B4B4",
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
   },
   actionPaid: {
     backgroundColor: "#FD0000",
@@ -651,6 +765,11 @@ const styles = StyleSheet.create({
   actionButtonText: {
     color: "#FFFFFF",
     fontSize: 14,
+    fontWeight: "800",
+  },
+  secondaryActionText: {
+    color: colors.accent,
+    fontSize: 13,
     fontWeight: "800",
   },
   actionOwnedText: {
