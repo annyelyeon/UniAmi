@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -9,113 +9,19 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useAuth } from "../src/context/AuthContext";
-import { colors } from "../src/theme/colors";
-import { RewardedAdModal } from "../components/RewardedAdModal";
+import { VideoWatchPlayer } from "../components/VideoWatchPlayer";
 
 interface StickerPack {
   id: string;
   title: string;
-  category: string;
   creator: string;
-  creatorAvatar: string;
-  itemCount: number;
-  price: string;
-  isFree: boolean;
-  isOwned: boolean;
-  isTrending?: boolean;
-  previewEmoji: string;
-  previewColor: string;
+  icon: string;
+  count: number;
+  priceAud: string;
+  gems: number;
+  category: string;
 }
-
-const INITIAL_PACKS: StickerPack[] = [
-  {
-    id: "pack-1",
-    title: "Campus Starter Pack",
-    category: "Campus Life",
-    creator: "UniAmi Team",
-    creatorAvatar: "UA",
-    itemCount: 12,
-    price: "Free",
-    isFree: true,
-    isOwned: true,
-    isTrending: true,
-    previewEmoji: "🎓",
-    previewColor: "#FEF2F2",
-  },
-  {
-    id: "pack-2",
-    title: "Exam Week Moods",
-    category: "Exam Life",
-    creator: "Sarah (VU)",
-    creatorAvatar: "SV",
-    itemCount: 18,
-    price: "Free",
-    isFree: true,
-    isOwned: false,
-    isTrending: true,
-    previewEmoji: "☕",
-    previewColor: "#FFF7ED",
-  },
-  {
-    id: "pack-3",
-    title: "Night Shift & Coding",
-    category: "Tech & Code",
-    creator: "Dev Club",
-    creatorAvatar: "DC",
-    itemCount: 16,
-    price: "$1.99",
-    isFree: false,
-    isOwned: false,
-    isTrending: true,
-    previewEmoji: "💻",
-    previewColor: "#EFF6FF",
-  },
-  {
-    id: "pack-4",
-    title: "Uni Cats & Coffee",
-    category: "Cute / Kawaii",
-    creator: "Mia K.",
-    creatorAvatar: "MK",
-    itemCount: 20,
-    price: "$2.49",
-    isFree: false,
-    isOwned: false,
-    isTrending: false,
-    previewEmoji: "🐱",
-    previewColor: "#FDF2F8",
-  },
-  {
-    id: "pack-5",
-    title: "Deadline Panic Reactions",
-    category: "Study Moods",
-    creator: "Liam (RMIT)",
-    creatorAvatar: "LR",
-    itemCount: 14,
-    price: "$1.49",
-    isFree: false,
-    isOwned: false,
-    isTrending: true,
-    previewEmoji: "🔥",
-    previewColor: "#FEF2F2",
-  },
-  {
-    id: "pack-6",
-    title: "Campus Doodles & Art",
-    category: "Campus Art",
-    creator: "Art Society",
-    creatorAvatar: "AS",
-    itemCount: 22,
-    price: "$2.99",
-    isFree: false,
-    isOwned: false,
-    isTrending: false,
-    previewEmoji: "🎨",
-    previewColor: "#F5F3FF",
-  },
-];
 
 const CATEGORIES = [
   "All Packs",
@@ -127,675 +33,614 @@ const CATEGORIES = [
   "Campus Art",
 ];
 
-const OWNED_PACKS_STORAGE_KEY = "uniami_owned_packs";
-const DIAMONDS_STORAGE_KEY = "@uni_ami_diamonds";
-
-const getOwnedPackIds = async (): Promise<string[]> => {
-  try {
-    const stored = await AsyncStorage.getItem(OWNED_PACKS_STORAGE_KEY);
-    if (!stored) return [];
-
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter((value): value is string => typeof value === "string");
-  } catch {
-    return [];
-  }
-};
-
-const persistOwnedPackIds = async (packIds: string[]) => {
-  await AsyncStorage.setItem(OWNED_PACKS_STORAGE_KEY, JSON.stringify(packIds));
-};
+const PACKS: StickerPack[] = [
+  {
+    id: "campus-starter",
+    title: "Campus Starter Pack",
+    creator: "UniAmi Team",
+    icon: "🎓",
+    count: 12,
+    priceAud: "Free",
+    gems: 0,
+    category: "Campus Life",
+  },
+  {
+    id: "exam-week",
+    title: "Exam Week Moods",
+    creator: "Sarah (VU)",
+    icon: "☕",
+    count: 18,
+    priceAud: "$1.20 AUD",
+    gems: 240,
+    category: "Exam Life",
+  },
+  {
+    id: "tech-code",
+    title: "Code & Bugs Pack",
+    creator: "Alex (IT)",
+    icon: "💻",
+    count: 15,
+    priceAud: "$1.50 AUD",
+    gems: 300,
+    category: "Tech & Code",
+  },
+  {
+    id: "cute-mascot",
+    title: "Cute Mascot Expressions",
+    creator: "Ami Studio",
+    icon: "🦊",
+    count: 16,
+    priceAud: "$1.20 AUD",
+    gems: 240,
+    category: "Cute / Kawaii",
+  },
+];
 
 export default function StickerMarketplaceScreen() {
-  const { profile, refreshProfile } = useAuth();
-  const [packs, setPacks] = useState<StickerPack[]>(INITIAL_PACKS);
-  const [selectedCategory, setSelectedCategory] = useState("All Packs");
-  const [activeTab, setActiveTab] = useState<"featured" | "trending" | "owned">("featured");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isAdOpen, setIsAdOpen] = useState(false);
-  const [diamonds, setDiamonds] = useState(0);
+  const router = useRouter();
+  const [diamonds, setDiamonds] = useState<number>(0);
+  const [selectedCategory, setSelectedCategory] = useState<string>("All Packs");
+  const [activeTab, setActiveTab] = useState<"Recommended" | "Trending" | "Owned">("Recommended");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [ownedPackIds, setOwnedPackIds] = useState<string[]>(["campus-starter"]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isVideoOpen, setIsVideoOpen] = useState(false);
 
-  const gemBalance = profile?.gemsBalance ?? 0;
+  const toastTimerRef = useRef<any>(null);
 
+  // 1. Safe storage loader
   useEffect(() => {
-    const loadDiamonds = async () => {
+    async function loadData() {
       try {
-        const stored = await AsyncStorage.getItem(DIAMONDS_STORAGE_KEY);
-        const parsed = stored ? Number(JSON.parse(stored)) : NaN;
-        setDiamonds(Number.isFinite(parsed) && parsed >= 0 ? parsed : gemBalance);
-      } catch {
-        setDiamonds(gemBalance);
+        const savedGems = await AsyncStorage.getItem("@uni_ami_diamonds");
+        if (savedGems) {
+          const parsed = JSON.parse(savedGems);
+          if (typeof parsed === "number") setDiamonds(parsed);
+        }
+
+        const savedOwned = await AsyncStorage.getItem("@uni_ami_owned_packs");
+        if (savedOwned) {
+          const parsedOwned = JSON.parse(savedOwned);
+          if (Array.isArray(parsedOwned)) {
+            setOwnedPackIds(parsedOwned.filter((id): id is string => typeof id === "string"));
+          }
+        }
+      } catch (err) {
+        console.warn("Storage load error:", err);
       }
+    }
+    loadData();
+
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
+  }, []);
 
-    void loadDiamonds();
-  }, [gemBalance]);
+  // 2. Non-blocking in-app notification toast
+  const showToast = (msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(msg);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 2500);
+  };
 
-  const filteredPacks = useMemo(() => {
-    return packs.filter((pack) => {
-      const matchesCategory =
-        selectedCategory === "All Packs" || pack.category === selectedCategory;
-      const matchesSearch =
-        pack.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        pack.creator.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesTab =
-        activeTab === "trending"
-          ? pack.isTrending
-          : activeTab === "owned"
-          ? pack.isOwned
-          : true;
-
-      return matchesCategory && matchesSearch && matchesTab;
+  const handleEarnDiamonds = (amount: number) => {
+    setDiamonds((currentBalance) => {
+      const nextBalance = currentBalance + amount;
+      void AsyncStorage.setItem("@uni_ami_diamonds", JSON.stringify(nextBalance));
+      return nextBalance;
     });
-  }, [packs, selectedCategory, searchQuery, activeTab]);
+    showToast("🎉 +10 Diamonds added to your balance!");
+  };
 
-  useFocusEffect(
-    useCallback(() => {
-      const refreshOwnedPacks = async () => {
-        const ownedIds = await getOwnedPackIds();
-        setPacks(
-          INITIAL_PACKS.map((pack) => ({
-            ...pack,
-            isOwned: pack.isOwned || ownedIds.includes(pack.id),
-          }))
-        );
-      };
+  const handleBuyCash = (pack: StickerPack) => {
+    showToast(`Redirecting to checkout for ${pack.title}...`);
+  };
 
-      void refreshOwnedPacks();
-      void refreshProfile();
-    }, [refreshProfile])
-  );
-
-  const handleAction = (pack: StickerPack) => {
-    if (pack.isOwned) return;
-
-    if (pack.isFree) {
-      setPacks((prev) => {
-        const nextPacks = prev.map((item) =>
-          item.id === pack.id ? { ...item, isOwned: true } : item
-        );
-
-        const ownedIds = nextPacks
-          .filter((item) => item.isOwned)
-          .map((item) => item.id);
-
-        void persistOwnedPackIds(ownedIds);
-        return nextPacks;
-      });
+  const handleUnlockGems = async (pack: StickerPack) => {
+    if (diamonds < pack.gems) {
+      showToast(`Need ${pack.gems} 💎 (You have ${diamonds} 💎). Click 'Earn +10 💎'!`);
       return;
     }
 
-    router.push({
-      pathname: "/sticker-checkout",
-      params: {
-        packId: pack.id,
-        title: pack.title,
-        price: pack.price,
-      },
-    });
+    const nextGems = diamonds - pack.gems;
+    const nextOwned = [...ownedPackIds, pack.id];
+
+    setDiamonds(nextGems);
+    setOwnedPackIds(nextOwned);
+
+    await AsyncStorage.setItem("@uni_ami_diamonds", JSON.stringify(nextGems));
+    await AsyncStorage.setItem("@uni_ami_owned_packs", JSON.stringify(nextOwned));
+
+    showToast(`🎉 Unlocked "${pack.title}"!`);
   };
 
-  const handleRewardEarned = async (amount: number) => {
-    const nextBalance = diamonds + amount;
-    setDiamonds(nextBalance);
-    await AsyncStorage.setItem(DIAMONDS_STORAGE_KEY, JSON.stringify(nextBalance));
-  };
+  const filteredPacks = PACKS.filter((p) => {
+    const matchesCategory =
+      selectedCategory === "All Packs" || p.category === selectedCategory;
+    const matchesSearch =
+      p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.creator.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesTab =
+      activeTab === "Owned" ? ownedPackIds.includes(p.id) : true;
+
+    return matchesCategory && matchesSearch && matchesTab;
+  });
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.mainWrapper}>
-          {/* Header Section */}
-          <View style={styles.headerRow}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.replace("/home")}
-              style={styles.backButton}
-            >
-              <Text style={styles.backButtonText}>←</Text>
-            </Pressable>
+    <View style={styles.screenWrapper}>
+      {/* Floating Non-blocking Toast Banner */}
+      {toastMessage && (
+        <View style={styles.toastContainer}>
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
 
-            <View style={styles.headerTitles}>
-              <Text style={styles.pageTitle}>Sticker Marketplace</Text>
-              <Text style={styles.pageSubtitle}>
-                Discover, collect, and unlock student-created sticker packs.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.topRow}>
-            <View style={styles.searchContainer}>
-              <Text style={styles.searchIcon}>🔍</Text>
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Search sticker packs, creators, or topics..."
-                placeholderTextColor={colors.muted}
-                style={styles.searchInput}
-              />
-              {searchQuery.length > 0 ? (
-                <Pressable onPress={() => setSearchQuery("")} style={styles.clearSearch}>
-                  <Text style={styles.clearSearchText}>✕</Text>
-                </Pressable>
-              ) : null}
-            </View>
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setIsAdOpen(true)}
-              style={styles.gemBalancePill}
-            >
-              <Text style={styles.gemBalanceText}>{diamonds} 💎</Text>
-              <Text style={styles.gemEarnText}>Earn +10 💎</Text>
-            </Pressable>
-          </View>
-
-          {/* Category Filter Pills */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoryScroll}
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        {/* Top Header Bar */}
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
           >
-            {CATEGORIES.map((cat) => {
-              const isSelected = selectedCategory === cat;
+            <Text style={styles.backBtnText}>←</Text>
+          </Pressable>
+
+          <View style={styles.headerTextGroup}>
+            <Text style={styles.title}>Sticker Marketplace</Text>
+            <Text style={styles.subtitle}>
+              Discover, collect, and unlock student-created sticker packs.
+            </Text>
+          </View>
+
+          {/* Clickable Earn Diamonds Pill */}
+          <Pressable
+            onPress={() => setIsVideoOpen(true)}
+            style={({ pressed }) => [styles.diamondPill, pressed && styles.pressed]}
+          >
+            <View style={styles.diamondRow}>
+              <Text style={styles.diamondCount}>{diamonds}</Text>
+              <Text style={styles.gemIcon}>💎</Text>
+            </View>
+            <Text style={styles.earnBadge}>Earn +10 💎</Text>
+          </Pressable>
+        </View>
+
+        {/* Search Input */}
+        <View style={styles.searchBox}>
+          <Text style={{ fontSize: 14, marginRight: 8 }}>🔍</Text>
+          <TextInput
+            placeholder="Search sticker packs, creators, or topics..."
+            placeholderTextColor="#94A3B8"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            style={styles.searchInput}
+          />
+        </View>
+
+        {/* Category Pills */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryList}
+        >
+          {CATEGORIES.map((cat) => {
+            const isActive = selectedCategory === cat;
+            return (
+              <Pressable
+                key={cat}
+                onPress={() => setSelectedCategory(cat)}
+                style={({ pressed }) => [
+                  styles.categoryPill,
+                  isActive && styles.categoryPillActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.categoryPillText,
+                    isActive && styles.categoryPillTextActive,
+                  ]}
+                >
+                  {cat}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Section Title & Sub-tabs */}
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>Featured Packs</Text>
+
+          <View style={styles.tabsContainer}>
+            {(["Recommended", "Trending", "Owned"] as const).map((tab) => {
+              const isActive = activeTab === tab;
               return (
                 <Pressable
-                  key={cat}
-                  onPress={() => setSelectedCategory(cat)}
-                  style={[styles.categoryChip, isSelected && styles.categoryChipActive]}
+                  key={tab}
+                  onPress={() => setActiveTab(tab)}
+                  style={[styles.tabButton, isActive && styles.tabButtonActive]}
                 >
                   <Text
                     style={[
-                      styles.categoryChipText,
-                      isSelected && styles.categoryChipTextActive,
+                      styles.tabButtonText,
+                      isActive && styles.tabButtonTextActive,
                     ]}
                   >
-                    {cat}
+                    {tab}
                   </Text>
                 </Pressable>
               );
             })}
-          </ScrollView>
-
-          {/* Section Sub-Header & Tabs */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Featured Packs</Text>
-            <View style={styles.tabToggleGroup}>
-              <Pressable
-                onPress={() => setActiveTab("featured")}
-                style={[styles.tabButton, activeTab === "featured" && styles.tabButtonActive]}
-              >
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    activeTab === "featured" && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Recommended
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setActiveTab("trending")}
-                style={[styles.tabButton, activeTab === "trending" && styles.tabButtonActive]}
-              >
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    activeTab === "trending" && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Trending
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setActiveTab("owned")}
-                style={[styles.tabButton, activeTab === "owned" && styles.tabButtonActive]}
-              >
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    activeTab === "owned" && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Owned
-                </Text>
-              </Pressable>
-            </View>
           </View>
+        </View>
 
-          {/* Sticker Pack Card Grid */}
-          <View style={styles.gridContainer}>
-            {filteredPacks.length === 0 ? (
-              <View style={styles.emptyStateCard}>
-                <Text style={styles.emptyStateEmoji}>{activeTab === "owned" ? "🎁" : "📦"}</Text>
-                <Text style={styles.emptyStateTitle}>
-                  {activeTab === "owned" ? "No owned sticker packs yet" : "No sticker packs found"}
-                </Text>
-                <Text style={styles.emptyStateSubtitle}>
-                  {activeTab === "owned"
-                    ? "No owned sticker packs yet. Browse packs to add them to your collection."
-                    : "Try selecting another category or clear your search query."}
-                </Text>
-              </View>
-            ) : (
-              filteredPacks.map((pack) => (
-                <View key={pack.id} style={styles.packCard}>
-                  {/* Visual Pack Thumbnail Box */}
-                  <View
-                    style={[
-                      styles.thumbnailBox,
-                      { backgroundColor: pack.previewColor },
-                    ]}
-                  >
-                    <Text style={styles.packEmoji}>{pack.previewEmoji}</Text>
-                    <View style={styles.itemCountBadge}>
-                      <Text style={styles.itemCountText}>
-                        {pack.itemCount} stickers
+        {/* Pack Cards Grid */}
+        <View style={styles.cardsGrid}>
+          {filteredPacks.map((pack) => {
+            const isOwned = ownedPackIds.includes(pack.id);
+            return (
+              <View key={pack.id} style={styles.card}>
+                <View style={styles.cardPreview}>
+                  <Text style={styles.packEmoji}>{pack.icon}</Text>
+                  <View style={styles.stickerCountTag}>
+                    <Text style={styles.stickerCountText}>{pack.count} stickers</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardBody}>
+                  <Text style={styles.packTitle}>{pack.title}</Text>
+                  <View style={styles.creatorRow}>
+                    <View style={styles.creatorBadge}>
+                      <Text style={styles.creatorBadgeText}>
+                        {pack.creator.slice(0, 2).toUpperCase()}
                       </Text>
                     </View>
+                    <Text style={styles.creatorText}>{pack.creator}</Text>
                   </View>
 
-                  {/* Card Content & Details */}
-                  <View style={styles.cardContent}>
-                    <Text style={styles.packTitle} numberOfLines={1}>
-                      {pack.title}
-                    </Text>
-
-                    <View style={styles.creatorRow}>
-                      <View style={styles.creatorAvatar}>
-                        <Text style={styles.avatarText}>{pack.creatorAvatar}</Text>
-                      </View>
-                      <Text style={styles.creatorName} numberOfLines={1}>
-                        {pack.creator}
-                      </Text>
+                  {isOwned ? (
+                    <View style={styles.ownedButton}>
+                      <Text style={styles.ownedButtonText}>Owned</Text>
                     </View>
-
-                    <View style={styles.purchaseActions}>
+                  ) : (
+                    <View style={styles.buttonStack}>
                       <Pressable
-                        accessibilityRole="button"
-                        onPress={() => handleAction(pack)}
-                        disabled={pack.isOwned}
-                        style={[
-                          styles.actionButton,
-                          styles.primaryAction,
-                          pack.isOwned && styles.actionOwned,
+                        onPress={() => handleBuyCash(pack)}
+                        style={({ pressed }) => [
+                          styles.buyButton,
+                          pressed && styles.pressed,
                         ]}
                       >
-                        <Text
-                          style={[
-                            styles.actionButtonText,
-                            pack.isOwned && styles.actionOwnedText,
-                          ]}
-                        >
-                          {pack.isOwned ? "Owned" : "Buy $1.20 AUD"}
+                        <Text style={styles.buyButtonText}>
+                          Buy {pack.priceAud}
                         </Text>
                       </Pressable>
 
-                      {!pack.isOwned ? (
-                        <Pressable
-                          accessibilityRole="button"
-                          onPress={() => {
-                            router.push({
-                              pathname: "/sticker-checkout",
-                              params: {
-                                packId: pack.id,
-                                title: pack.title,
-                                price: "1.20",
-                                paymentMode: "gems",
-                              },
-                            });
-                          }}
-                          style={[styles.secondaryAction]}
-                        >
-                          <Text style={styles.secondaryActionText}>Unlock with 240 💎</Text>
-                        </Pressable>
-                      ) : null}
+                      <Pressable
+                        onPress={() => handleUnlockGems(pack)}
+                        style={({ pressed }) => [
+                          styles.unlockButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.unlockButtonText}>
+                          Unlock with {pack.gems} 💎
+                        </Text>
+                      </Pressable>
                     </View>
-                  </View>
+                  )}
                 </View>
-              ))
-            )}
-          </View>
+              </View>
+            );
+          })}
         </View>
       </ScrollView>
 
-      {isAdOpen && (
-        <RewardedAdModal
-          visible={isAdOpen}
-          onRewardEarned={handleRewardEarned}
-          onClose={() => setIsAdOpen(false)}
+      {isVideoOpen && (
+        <VideoWatchPlayer
+          visible={isVideoOpen}
+          onClose={() => setIsVideoOpen(false)}
+          onRewardEarned={handleEarnDiamonds}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  screenWrapper: {
     flex: 1,
     backgroundColor: "#FAF7F2",
+    position: "relative",
   },
-  scrollContainer: {
-    paddingVertical: 24,
-    paddingHorizontal: 16,
-    alignItems: "center",
+  toastContainer: {
+    position: "absolute",
+    top: 16,
+    alignSelf: "center",
+    backgroundColor: "#0F172A",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 24,
+    zIndex: 99999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  mainWrapper: {
+  toastText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: 24,
+    maxWidth: 1100,
     width: "100%",
-    maxWidth: 960,
-    gap: 20,
+    alignSelf: "center",
   },
-  headerRow: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    marginBottom: 20,
   },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    cursor: "pointer",
   },
-  backButtonText: {
-    fontSize: 20,
+  backBtnText: {
+    fontSize: 18,
     fontWeight: "700",
-    color: colors.text,
+    color: "#0F172A",
   },
-  headerTitles: {
+  headerTextGroup: {
     flex: 1,
+    marginLeft: 14,
   },
-  pageTitle: {
-    fontSize: 26,
+  title: {
+    fontSize: 22,
     fontWeight: "800",
-    color: colors.text,
-    letterSpacing: -0.5,
+    color: "#0F172A",
   },
-  pageSubtitle: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: colors.muted,
+  subtitle: {
+    fontSize: 12,
+    color: "#64748B",
     marginTop: 2,
   },
-  topRow: {
+  diamondPill: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+  },
+  diamondRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 4,
   },
-  searchContainer: {
-    flex: 1,
+  diamondCount: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  gemIcon: {
+    fontSize: 13,
+  },
+  earnBadge: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#FD0000",
+    marginTop: 2,
+  },
+  searchBox: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: colors.border,
+    borderColor: "#E2E8F0",
     paddingHorizontal: 16,
     paddingVertical: 10,
-    gap: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  searchIcon: {
-    fontSize: 16,
+    marginBottom: 16,
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
-    color: colors.text,
+    fontSize: 13,
+    color: "#0F172A",
   },
-  clearSearch: {
-    padding: 4,
-  },
-  clearSearchText: {
-    color: colors.muted,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  categoryScroll: {
+  categoryList: {
+    flexDirection: "row",
     gap: 8,
-    paddingVertical: 2,
+    marginBottom: 24,
   },
-  categoryChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 16,
+  categoryPill: {
     backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    cursor: "pointer",
   },
-  categoryChipActive: {
+  categoryPillActive: {
     backgroundColor: "#FD0000",
     borderColor: "#FD0000",
   },
-  categoryChipText: {
-    fontSize: 13,
+  categoryPillText: {
+    fontSize: 12,
     fontWeight: "700",
-    color: colors.text,
+    color: "#475569",
   },
-  categoryChipTextActive: {
+  categoryPillTextActive: {
     color: "#FFFFFF",
   },
-  sectionHeaderRow: {
+  sectionRow: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 6,
+    alignItems: "center",
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
-    color: colors.text,
+    color: "#0F172A",
   },
-  tabToggleGroup: {
+  tabsContainer: {
     flexDirection: "row",
-    backgroundColor: "#EAE6DF",
-    borderRadius: 14,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 12,
     padding: 3,
-    gap: 2,
   },
   tabButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 11,
+    borderRadius: 9,
+    cursor: "pointer",
   },
   tabButtonActive: {
     backgroundColor: "#FFFFFF",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
   },
   tabButtonText: {
     fontSize: 12,
     fontWeight: "700",
-    color: colors.muted,
+    color: "#64748B",
   },
   tabButtonTextActive: {
     color: "#FD0000",
   },
-  gridContainer: {
+  cardsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 16,
-    justifyContent: "flex-start",
   },
-  packCard: {
-    width: "48.5%",
-    flexBasis: "48.5%",
-    minWidth: 0,
+  card: {
+    flex: 1,
+    minWidth: 280,
+    maxWidth: 520,
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: colors.border,
-    padding: 14,
-    gap: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
+    borderColor: "#E2E8F0",
+    overflow: "hidden",
   },
-  thumbnailBox: {
+  cardPreview: {
     height: 140,
-    borderRadius: 18,
+    backgroundColor: "#FFF5F5",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
   },
   packEmoji: {
-    fontSize: 54,
+    fontSize: 56,
   },
-  itemCountBadge: {
+  stickerCountTag: {
     position: "absolute",
     bottom: 10,
     right: 10,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    paddingHorizontal: 10,
+    backgroundColor: "rgba(15, 23, 42, 0.7)",
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
   },
-  itemCountText: {
+  stickerCountText: {
     color: "#FFFFFF",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
   },
-  cardContent: {
-    gap: 8,
+  cardBody: {
+    padding: 16,
   },
   packTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
-    color: colors.text,
+    color: "#0F172A",
+    marginBottom: 6,
   },
   creatorRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  creatorAvatar: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+  creatorBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: "#FD0000",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: {
+  creatorBadgeText: {
     color: "#FFFFFF",
     fontSize: 9,
     fontWeight: "800",
   },
-  creatorName: {
+  creatorText: {
     fontSize: 12,
-    color: colors.muted,
+    color: "#64748B",
     fontWeight: "600",
-    flex: 1,
   },
-  gemBalancePill: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: 18,
-    paddingHorizontal: 12,
+  ownedButton: {
+    marginTop: 14,
+    backgroundColor: "#F1F5F9",
     paddingVertical: 10,
-    minWidth: 110,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
+    borderRadius: 12,
+    alignItems: "center",
   },
-  gemBalanceText: {
-    color: colors.text,
-    fontSize: 14,
+  ownedButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  buttonStack: {
+    gap: 8,
+    marginTop: 12,
+  },
+  buyButton: {
+    backgroundColor: "#FD0000",
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    cursor: "pointer",
+  },
+  buyButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "800",
   },
-  gemEarnText: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  purchaseActions: {
-    gap: 8,
-    marginTop: 4,
-  },
-  actionButton: {
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-  },
-  primaryAction: {
-    backgroundColor: colors.accent,
-  },
-  secondaryAction: {
+  unlockButton: {
     backgroundColor: "#FFF5F5",
     borderWidth: 1,
-    borderColor: "#F9B4B4",
-    borderRadius: 14,
+    borderColor: "#FECACA",
+    paddingVertical: 8,
+    borderRadius: 12,
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
+    cursor: "pointer",
   },
-  actionPaid: {
-    backgroundColor: "#FD0000",
-  },
-  actionFree: {
-    backgroundColor: "#059669",
-  },
-  actionOwned: {
-    backgroundColor: "#F3F4F6",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  actionButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
+  unlockButtonText: {
+    color: "#FD0000",
+    fontSize: 12,
     fontWeight: "800",
   },
-  secondaryActionText: {
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  actionOwnedText: {
-    color: "#6B7280",
-  },
-  emptyStateCard: {
-    width: "100%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    padding: 36,
-    alignItems: "center",
-    gap: 8,
-  },
-  emptyStateEmoji: {
-    fontSize: 44,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: colors.text,
-  },
-  emptyStateSubtitle: {
-    fontSize: 13,
-    color: colors.muted,
-    textAlign: "center",
+  pressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.98 }],
   },
 });
