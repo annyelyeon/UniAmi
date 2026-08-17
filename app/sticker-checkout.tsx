@@ -1,13 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useAuth } from "../src/context/AuthContext";
+import { supabase } from "../src/lib/supabase";
 import { colors } from "../src/theme/colors";
 
-type PaymentMethod = "paypal" | "apple" | "card";
+type PaymentMethod = "apple" | "gems";
 
 const OWNED_PACKS_STORAGE_KEY = "uniami_owned_packs";
 
@@ -30,47 +32,125 @@ const persistOwnedPackIds = async (packIds: string[]) => {
 };
 
 export default function StickerCheckoutScreen() {
-  const { packId, title, price } = useLocalSearchParams<{
+  const { profile, refreshProfile } = useAuth();
+  const { packId, title, price, paymentMode } = useLocalSearchParams<{
     packId?: string;
     title?: string;
     price?: string;
+    paymentMode?: string;
   }>();
 
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("paypal");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    paymentMode === "gems" ? "gems" : "apple"
+  );
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPaid, setIsPaid] = useState(false);
+  const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
 
-  const priceAUD = Number.parseFloat(typeof price === "string" ? price : "1.99");
-  const safePrice = Number.isFinite(priceAUD) ? priceAUD : 1.99;
-  const gst = (safePrice * 0.1).toFixed(2);
-  const creatorShare = (safePrice * 0.833).toFixed(2);
-  const platformShare = (safePrice * 0.167).toFixed(2);
-  const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
-  const dateStr = new Date().toLocaleDateString("en-AU");
+  const priceAUD = Number.parseFloat(typeof price === "string" ? price : "1.20");
+  const safePrice = Number.isFinite(priceAUD) ? priceAUD : 1.2;
+  const gemsNeeded = 240;
+  const userGems = profile?.gemsBalance ?? 0;
+  const missingGems = Math.max(0, gemsNeeded - userGems);
   const packName = typeof title === "string" && title.trim() ? title : packId ? packId.replace(/-/g, " ") : "Sticker Pack";
 
-  const selectedMethodLabel =
-    paymentMethod === "paypal" ? "PayPal" : paymentMethod === "apple" ? "Apple / Google Pay" : "Credit / Debit Card";
+  const canAffordWithGems = userGems >= gemsNeeded;
 
-  const handlePay = () => {
+  const selectedMethodLabel = paymentMethod === "apple" ? "Apple / Google Pay ($1.20 AUD)" : "Pay with 240 Gems";
+
+  const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
+  const dateStr = new Date().toLocaleDateString("en-AU");
+  const gst = (safePrice * 0.1).toFixed(2);
+
+  const summaryItems = useMemo(
+    () => [
+      { label: "Sticker Pack", value: packName },
+      { label: "Payment", value: selectedMethodLabel },
+      { label: "Creator revenue", value: "$1.00 AUD" },
+      { label: "Platform margin", value: "$0.20 AUD" },
+    ],
+    [packName, selectedMethodLabel]
+  );
+
+  const handlePay = async () => {
+    const purchasedPackId = typeof packId === "string" ? packId : "";
+    if (!purchasedPackId) return;
+
     setIsProcessing(true);
+    setPaymentMessage(null);
 
-    setTimeout(() => {
+    if (paymentMethod === "gems") {
+      if (!canAffordWithGems) {
+        setPaymentMessage(`You need ${missingGems} more gems to unlock this pack.`);
+        setIsProcessing(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ gems_balance: userGems - gemsNeeded, updated_at: new Date().toISOString() })
+        .eq("id", profile?.id);
+
+      if (error) {
+        setPaymentMessage("Unable to process gem payment right now. Please try again.");
+        setIsProcessing(false);
+        return;
+      }
+
+      const { error: purchaseError } = await supabase.from("sticker_purchases").insert({
+        user_id: profile?.id,
+        sticker_pack_id: purchasedPackId,
+        payment_type: "gems",
+        amount_aud: 1.2,
+        creator_cut: 1.0,
+        platform_cut: 0.2,
+        status: "completed",
+      });
+
+      if (purchaseError) {
+        setPaymentMessage("Purchase was not recorded. Please contact support.");
+        setIsProcessing(false);
+        return;
+      }
+
+      await refreshProfile();
       setIsProcessing(false);
       setIsPaid(true);
 
-      const purchasedPackId = typeof packId === "string" ? packId : "";
-      if (!purchasedPackId) return;
+      const existingIds = await getOwnedPackIds();
+      const nextIds = existingIds.includes(purchasedPackId)
+        ? existingIds
+        : [...existingIds, purchasedPackId];
 
-      void (async () => {
-        const existingIds = await getOwnedPackIds();
-        const nextIds = existingIds.includes(purchasedPackId)
-          ? existingIds
-          : [...existingIds, purchasedPackId];
+      await persistOwnedPackIds(nextIds);
+      return;
+    }
 
-        await persistOwnedPackIds(nextIds);
-      })();
-    }, 1200);
+    const { error: purchaseError } = await supabase.from("sticker_purchases").insert({
+      user_id: profile?.id,
+      sticker_pack_id: purchasedPackId,
+      payment_type: "cash",
+      amount_aud: safePrice,
+      creator_cut: 1.0,
+      platform_cut: 0.2,
+      status: "completed",
+    });
+
+    if (purchaseError) {
+      setPaymentMessage("Payment succeeded but the purchase record failed to save.");
+      setIsProcessing(false);
+      return;
+    }
+
+    setIsProcessing(false);
+    setIsPaid(true);
+
+    const existingIds = await getOwnedPackIds();
+    const nextIds = existingIds.includes(purchasedPackId)
+      ? existingIds
+      : [...existingIds, purchasedPackId];
+
+    await persistOwnedPackIds(nextIds);
   };
 
   return (
@@ -102,24 +182,12 @@ export default function StickerCheckoutScreen() {
               <>
                 <View style={styles.summaryBox}>
                   <Text style={styles.itemName}>{packName}</Text>
-                  <Text style={styles.itemPrice}>${safePrice.toFixed(2)} AUD</Text>
+                  <Text style={styles.itemPrice}>$1.20 AUD</Text>
                 </View>
 
                 <Text style={styles.sectionTitle}>Select payment method</Text>
 
                 <View style={styles.methodGroup}>
-                  <Pressable
-                    style={[styles.methodBtn, paymentMethod === "paypal" && styles.methodBtnActive]}
-                    onPress={() => setPaymentMethod("paypal")}
-                  >
-                    <Ionicons
-                      name="logo-paypal"
-                      size={20}
-                      color={paymentMethod === "paypal" ? "#0070BA" : colors.muted}
-                    />
-                    <Text style={[styles.methodText, paymentMethod === "paypal" && styles.methodTextActive]}>PayPal</Text>
-                  </Pressable>
-
                   <Pressable
                     style={[styles.methodBtn, paymentMethod === "apple" && styles.methodBtnActive]}
                     onPress={() => setPaymentMethod("apple")}
@@ -129,27 +197,55 @@ export default function StickerCheckoutScreen() {
                       size={20}
                       color={paymentMethod === "apple" ? "#000000" : colors.muted}
                     />
-                    <Text style={[styles.methodText, paymentMethod === "apple" && styles.methodTextActive]}>Apple / Google Pay</Text>
+                    <Text style={[styles.methodText, paymentMethod === "apple" && styles.methodTextActive]}>
+                      Apple / Google Pay ($1.20 AUD)
+                    </Text>
                   </Pressable>
 
                   <Pressable
-                    style={[styles.methodBtn, paymentMethod === "card" && styles.methodBtnActive]}
-                    onPress={() => setPaymentMethod("card")}
+                    style={[styles.methodBtn, paymentMethod === "gems" && styles.methodBtnActive]}
+                    onPress={() => setPaymentMethod("gems")}
                   >
                     <Ionicons
-                      name="card-outline"
-                      size={20}
-                      color={paymentMethod === "card" ? "#FD0000" : colors.muted}
+                      name="diamond"
+                      size={18}
+                      color={paymentMethod === "gems" ? colors.accent : colors.muted}
                     />
-                    <Text style={[styles.methodText, paymentMethod === "card" && styles.methodTextActive]}>
-                      Credit / Debit Card
+                    <Text style={[styles.methodText, paymentMethod === "gems" && styles.methodTextActive]}>
+                      Pay with 240 Gems
                     </Text>
                   </Pressable>
                 </View>
 
-                <Pressable style={styles.payBtn} onPress={handlePay} disabled={isProcessing}>
+                {paymentMethod === "gems" && !canAffordWithGems ? (
+                  <View style={styles.gemWarningBox}>
+                    <Text style={styles.gemWarningText}>
+                      You need {missingGems} more gems to unlock this pack.
+                    </Text>
+                    <Pressable
+                      style={styles.inlineAdButton}
+                      onPress={() => router.push("/sticker-ad-unlock")}
+                    >
+                      <Text style={styles.inlineAdButtonText}>Watch Ads to Earn Missing Gems</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {paymentMessage ? <Text style={styles.paymentMessage}>{paymentMessage}</Text> : null}
+
+                <Pressable
+                  style={styles.payBtn}
+                  onPress={() => {
+                    void handlePay();
+                  }}
+                  disabled={isProcessing || (paymentMethod === "gems" && !canAffordWithGems)}
+                >
                   <Text style={styles.payBtnText}>
-                    {isProcessing ? "Authorising..." : `Pay $${safePrice.toFixed(2)} AUD with ${selectedMethodLabel}`}
+                    {isProcessing
+                      ? "Authorising..."
+                      : paymentMethod === "gems"
+                        ? `Pay with 240 Gems`
+                        : `Pay $1.20 AUD with Apple / Google Pay`}
                   </Text>
                 </Pressable>
               </>
@@ -167,31 +263,18 @@ export default function StickerCheckoutScreen() {
                   <Text style={styles.invoiceRow}>Invoice No: {invoiceNumber}</Text>
                   <Text style={styles.invoiceRow}>Date: {dateStr}</Text>
                   <View style={styles.divider} />
-                  <Text style={styles.invoiceRow}>Item: {packName}</Text>
-                  <Text style={styles.invoiceRow}>Payment Mode: {selectedMethodLabel.toUpperCase()}</Text>
-                  <Text style={styles.invoiceRow}>Subtotal: ${(safePrice - Number(gst)).toFixed(2)} AUD</Text>
-                  <Text style={styles.invoiceRow}>GST (10%): ${gst} AUD</Text>
+                  {summaryItems.map((item) => (
+                    <Text key={item.label} style={styles.invoiceRow}>
+                      {item.label}: {item.value}
+                    </Text>
+                  ))}
                   <View style={styles.divider} />
                   <Text style={styles.invoiceTotal}>Total Paid: ${safePrice.toFixed(2)} AUD</Text>
                 </View>
 
                 <Pressable
                   style={styles.doneBtn}
-                  onPress={() => {
-                    const purchasedPackId = typeof packId === "string" ? packId : "";
-                    if (purchasedPackId) {
-                      void (async () => {
-                        const existingIds = await getOwnedPackIds();
-                        const nextIds = existingIds.includes(purchasedPackId)
-                          ? existingIds
-                          : [...existingIds, purchasedPackId];
-
-                        await persistOwnedPackIds(nextIds);
-                      })();
-                    }
-
-                    router.push("/sticker-marketplace");
-                  }}
+                  onPress={() => router.push("/sticker-marketplace")}
                 >
                   <Text style={styles.doneBtnText}>Return to Marketplace</Text>
                 </Pressable>
@@ -350,6 +433,36 @@ const styles = StyleSheet.create({
   },
   methodTextActive: {
     color: colors.text,
+  },
+  gemWarningBox: {
+    backgroundColor: "#FFF7ED",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    padding: 12,
+    gap: 8,
+  },
+  gemWarningText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  inlineAdButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  inlineAdButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  paymentMessage: {
+    color: "#B91C1C",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
   },
   payBtn: {
     backgroundColor: "#FD0000",

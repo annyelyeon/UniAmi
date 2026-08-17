@@ -44,6 +44,7 @@ type ProfileRow = {
   is_premium: boolean;
   post_count: number;
   sticker_packs_owned: number;
+  gems_balance: number;
   joined_clubs: string[];
   created_at: string;
   updated_at: string;
@@ -89,6 +90,7 @@ function mapProfileRowToUser(row: ProfileRow): User {
     premiumStatus: row.is_premium ? "premium" : "free",
     postCount: row.post_count,
     stickerPacksOwned: row.sticker_packs_owned,
+    gemsBalance: row.gems_balance ?? 0,
     joinedClubs: row.joined_clubs,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -110,6 +112,7 @@ function mapSupabaseUserToProfile(user: SupabaseUser): Omit<ProfileRow, "created
     post_count: typeof meta.postCount === "number" ? meta.postCount : 0,
     sticker_packs_owned:
       typeof meta.stickerPacksOwned === "number" ? meta.stickerPacksOwned : 0,
+    gems_balance: typeof meta.gemsBalance === "number" ? meta.gemsBalance : 0,
     joined_clubs: Array.isArray(meta.joinedClubs) ? meta.joinedClubs : [],
   };
 }
@@ -237,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isPremium: false,
           postCount: 0,
           stickerPacksOwned: 0,
+          gemsBalance: 0,
           joinedClubs: [],
         },
       },
