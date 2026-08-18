@@ -80,10 +80,9 @@ type SubjectReviewView = SubjectReview & {
 };
 
 const assessmentLabel: Record<Subject["assessmentType"], string> = {
-  assignment: "Assignment-focused",
-  quiz: "Quiz-focused",
-  exam: "Exam-focused",
-  project: "Project-focused",
+  assignment: "Assignment",
+  quiz: "Test",
+  project: "Lab/project",
   mixed: "Mixed assessment",
 };
 
@@ -95,6 +94,7 @@ async function fetchSubjectByCode(code: string) {
   }
 
   // try exact match first
+  console.log("[SubjectInfo] exact query start", { code: trimmedCode });
   const { data: exactData, error: exactError } = await supabase
     .from("subjects")
     .select(
@@ -102,6 +102,11 @@ async function fetchSubjectByCode(code: string) {
     )
     .eq("code", trimmedCode)
     .maybeSingle();
+  console.log("[SubjectInfo] exact query end", {
+    code: trimmedCode,
+    hasData: Boolean(exactData),
+    error: exactError?.message ?? null,
+  });
 
   if (exactError) {
     return { subject: null as Subject | null, reviews: [] as SubjectReviewView[], fuzzyMatches: [] as Subject[] };
@@ -190,11 +195,26 @@ export default function SubjectInfoScreen() {
   const [submittingNew, setSubmittingNew] = useState(false);
 
   const loadSubject = async (code: string) => {
-    const result = await fetchSubjectByCode(code);
-    setSubject(result.subject ?? null);
-    setReviews(result.reviews ?? []);
-    setFuzzyMatches(result.fuzzyMatches ?? []);
-    setLoading(false);
+    try {
+      console.log("[SubjectInfo] loadSubject start", { code });
+      const result = await fetchSubjectByCode(code);
+      console.log("[SubjectInfo] loadSubject end", {
+        code,
+        hasSubject: Boolean(result.subject),
+        fuzzyCount: result.fuzzyMatches?.length ?? 0,
+        reviewCount: result.reviews?.length ?? 0,
+      });
+      setSubject(result.subject ?? null);
+      setReviews(result.reviews ?? []);
+      setFuzzyMatches(result.fuzzyMatches ?? []);
+    } catch (error) {
+      console.error("[SubjectInfo] loadSubject failed", { code, error });
+      setSubject(null);
+      setReviews([]);
+      setFuzzyMatches([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -216,6 +236,7 @@ export default function SubjectInfoScreen() {
   useEffect(() => {
     const code = searchText.trim().toUpperCase();
     if (!code) return;
+    if (code === submittedCode) return;
 
     const timer = setTimeout(() => {
       setSubmittedCode(code);
@@ -339,8 +360,23 @@ export default function SubjectInfoScreen() {
       {showAddForm ? (
         <View style={styles.subjectCard}>
           <Text style={{ color: colors.text, fontWeight: "800", marginBottom: 8 }}>Add subject</Text>
-          <TextInput value={newCode} onChangeText={setNewCode} placeholder="Code (e.g. COMP1000)" placeholderTextColor={colors.muted} style={[styles.searchInput, { marginBottom: 8 }]} autoCapitalize="characters" />
-          <TextInput value={newTitle} onChangeText={setNewTitle} placeholder="Title" placeholderTextColor={colors.muted} style={[styles.searchInput, { marginBottom: 8 }]} />
+          <Text style={{ color: colors.text, fontSize: 16, marginBottom: 4 }}>Subject code</Text>
+          <TextInput value={newCode} onChangeText={setNewCode} placeholder="e.g. COMP1000" placeholderTextColor={colors.muted} style={[styles.searchInput, { marginBottom: 8 }]} autoCapitalize="characters" />
+          <Text style={{ color: colors.text, fontSize: 16, marginBottom: 4 }}>Subject title</Text>
+          <TextInput value={newTitle} onChangeText={setNewTitle} placeholder="e.g.Introduction to Programming" placeholderTextColor={colors.muted} style={[styles.searchInput, { marginBottom: 8 }]} />
+          <Text style={{ color: colors.text, fontSize: 16, marginBottom: 4 }}>Assessment type</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+            {Object.entries(assessmentLabel).map(([key, label]) => (
+              <Pressable
+                key={key}
+                onPress={() => setNewAssessment(key as Subject["assessmentType"])}
+                style={{ padding: 8, backgroundColor: newAssessment === key ? colors.surface : colors.surfaceSoft, borderRadius: 8 }}
+              >
+                <Text style={{ color: colors.text }}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={{ color: colors.text, fontSize: 16, marginBottom: 4 }}>Number of assignments</Text>
           <TextInput value={String(newNumAssignments)} onChangeText={(v) => setNewNumAssignments(Number(v) || 0)} placeholder="Number of assignments" placeholderTextColor={colors.muted} keyboardType="numeric" style={[styles.searchInput, { marginBottom: 8 }]} />
           <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 8 }}>
             <Pressable onPress={() => setNewGroupRequired((g) => !g)} style={{ padding: 8, backgroundColor: newGroupRequired ? colors.surface : colors.surfaceSoft, borderRadius: 8 }}>
@@ -350,6 +386,7 @@ export default function SubjectInfoScreen() {
               <TextInput value={newGroupSize ? String(newGroupSize) : ""} onChangeText={(v) => setNewGroupSize(Number(v) || undefined)} placeholder="Group size" placeholderTextColor={colors.muted} keyboardType="numeric" style={[styles.searchInput, { flex: 1 }]} />
             ) : null}
           </View>
+          <Text style={{ color: colors.text, fontSize: 16, marginBottom: 4 }}>Prerequisites (optional)</Text>
           <TextInput value={newPrereqs} onChangeText={setNewPrereqs} placeholder="Prerequisites (comma separated)" placeholderTextColor={colors.muted} style={[styles.searchInput, { marginBottom: 12 }]} />
           <View style={{ flexDirection: "row", gap: 8 }}>
             <Pressable accessibilityRole="button" onPress={submitNewSubject} style={[styles.reviewPostButton, submittingNew && styles.reviewPostButtonDisabled]}>
@@ -385,10 +422,6 @@ export default function SubjectInfoScreen() {
                   <Text style={styles.resultTitle}>{renderHighlighted(m.title, searchText)}</Text>
                 </View>
                 <View style={styles.resultMeta}>
-                  <View style={styles.resultMetaRow}>
-                    <Ionicons name="star" size={14} color={colors.accentStrong} />
-                    <Text style={styles.resultMetaValue}>{m.averageRating?.toFixed ? m.averageRating.toFixed(1) : "0.0"}</Text>
-                  </View>
                   <Text style={styles.resultMetaSub}>{m.reviewCount ?? 0} reviews</Text>
                 </View>
               </View>
@@ -412,10 +445,6 @@ export default function SubjectInfoScreen() {
 
             <View style={{ alignItems: "flex-end", gap: 8 }}>
               <View style={styles.ratingBlock}>
-                <View style={styles.ratingRow}>
-                  <Ionicons name="star" size={16} color={colors.accent} />
-                  <Text style={styles.ratingValue}>{subject.averageRating.toFixed(1)}</Text>
-                </View>
                 <Text style={styles.reviewCount}>{subject.reviewCount} reviews</Text>
               </View>
               {profile?.id && subject.createdBy === profile.id ? (
