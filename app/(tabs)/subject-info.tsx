@@ -228,6 +228,12 @@ export default function SubjectInfoScreen() {
       return;
     }
 
+    if (nextCode === submittedCode) {
+      setLoading(true);
+      loadSubject(nextCode);
+      return;
+    }
+
     setSubmittedCode(nextCode);
     setLoading(true);
   };
@@ -312,19 +318,45 @@ export default function SubjectInfoScreen() {
   };
 
   const deleteSubject = async (code: string) => {
+    if (!profile?.id) {
+      Alert.alert("Error", "You must be signed in to delete a subject.");
+      return;
+    }
+
     Alert.alert("Delete subject", `Delete ${code}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          const { error } = await supabase.from("subjects").delete().eq("code", code);
+          const { data, error } = await supabase
+            .from("subjects")
+            .delete()
+            .eq("code", code)
+            .eq("created_by", profile.id)
+            .select("code");
+
           if (error) {
             Alert.alert("Error", error.message ?? "Failed to delete subject");
             return;
           }
 
-          setSubject(null);
+          if (!data || data.length === 0) {
+            Alert.alert("Unable to delete", "This subject was not deleted. Check permissions and try again.");
+            return;
+          }
+
+          setSubject((prev) => (prev?.code === code ? null : prev));
+          setReviews((prev) => (subject?.code === code ? [] : prev));
+          setFuzzyMatches((prev) => prev.filter((item) => item.code !== code));
+
+          if (submittedCode === code) {
+            setSubmittedCode("");
+          }
+
+          if (searchText.trim().toUpperCase() === code) {
+            setSearchText("");
+          }
         },
       },
     ]);

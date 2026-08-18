@@ -8,7 +8,7 @@ alter table public.subjects
 -- Ensure RLS is enabled
 alter table public.subjects enable row level security;
 
-…-- 6) Trigram extension + GIN trigram indexes for fuzzy search
+-- 6) Trigram extension + GIN trigram indexes for fuzzy search
 create extension if not exists pg_trgm;
 
 create index if not exists subjects_code_trgm_idx
