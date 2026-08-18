@@ -34,6 +34,10 @@ export default function ProfileScreen() {
   const [joinedCommunities, setJoinedCommunities] = useState<any[]>([]);
   const subjectCount = profile?.faculty ? 4 : 0;
 
+  const handleSignOut = async () => { 
+    await supabase.auth.signOut(); 
+  };
+
   useEffect(() => {
     const loadPostCount = async () => {
       if (!profile?.id) return;
@@ -225,6 +229,13 @@ export default function ProfileScreen() {
           <Text style={styles.settingsLabel}>About</Text>
         </View>
         <Ionicons name="chevron-forward-outline" size={18} color={colors.muted} />
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        onPress={handleSignOut}
+        style={styles.signOutButton}
+      >
+        <Text style={styles.signOutText}>Sign out</Text>
       </Pressable>
     </ScreenShell>
   );
@@ -514,4 +525,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: "700",
   },
+  signOutButton: {
+  alignItems: "center",
+  borderColor: colors.brandRed,
+  borderRadius: 16,
+  borderWidth: 1,
+  paddingVertical: 12,
+  marginTop: 8,
+},
+signOutText: {
+  color: colors.brandRed,
+  fontSize: 14,
+  fontWeight: "700",
+},
 });
