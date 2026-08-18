@@ -765,7 +765,7 @@ const styles = StyleSheet.create({
   marginTop: 4,
   },
   activityCard: {
-    flexBasis: "50%",
+    flexBasis: "47%",
     flexGrow: 1,
     backgroundColor: "#FFFFFF",
     borderColor: "#E2E8F0",
