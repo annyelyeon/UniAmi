@@ -5,8 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
-  Modal,
-  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -16,6 +14,9 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { DraggableNoteSticker } from "../components/DraggableNoteSticker";
+import { AvailableStickerItem, useAvailableStickers } from "../src/hooks/useAvailableStickers";
+import { createPlacedSticker, NotePlacedSticker } from "../src/types/noteStickers";
 
 type PaperTheme = {
   id: string;
@@ -32,18 +33,6 @@ type NoteAttachment = {
   size?: string;
 };
 
-type StickerItem = {
-  id: string;
-  emoji: string;
-  label: string;
-};
-
-type PlacedSticker = StickerItem & {
-  x: number;
-  y: number;
-  rotation: number;
-};
-
 type NoteRecord = {
   id: string;
   title: string;
@@ -52,8 +41,15 @@ type NoteRecord = {
   isPinned: boolean;
   updatedAt: string;
   attachments: NoteAttachment[];
-  stickers: PlacedSticker[];
+  stickers: NotePlacedSticker[];
+  checklist: ChecklistItem[];
 };
+
+interface ChecklistItem {
+  id: string;
+  text: string;
+  checked: boolean;
+}
 
 type RichTextActions = {
   executeCommand: (command: string, value?: string) => void;
@@ -73,16 +69,7 @@ const PAPER_THEMES: PaperTheme[] = [
   { id: "slate", value: "#1E293B", label: "Dark Slate", textColor: "#F8FAFC" },
 ];
 
-const STICKER_LIBRARY: StickerItem[] = [
-  { id: "target", emoji: "🎯", label: "Target Locked" },
-  { id: "study", emoji: "📚", label: "Study Time" },
-  { id: "coffee", emoji: "☕", label: "Coffee Boost" },
-  { id: "idea", emoji: "💡", label: "Big Idea" },
-  { id: "grade", emoji: "⭐", label: "A+ Grade" },
-  { id: "fire", emoji: "🔥", label: "On Fire" },
-  { id: "vibes", emoji: "🌸", label: "Good Vibes" },
-  { id: "fuel", emoji: "🥑", label: "Brain Fuel" },
-];
+
 
 const formatTime = (value: string) => {
   try {
@@ -102,123 +89,18 @@ const formatFileSize = (size?: number) => {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-function DraggableSticker({
-  sticker,
-  onUpdatePosition,
-  onDelete,
-}: {
-  sticker: PlacedSticker;
-  onUpdatePosition: (id: string, x: number, y: number) => void;
-  onDelete: (id: string) => void;
-}) {
-  const [position, setPosition] = useState({ x: sticker.x, y: sticker.y });
-  const positionRef = useRef(position);
-  const isDragging = useRef(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const dragOrigin = useRef(position);
-
-  useEffect(() => {
-    const nextPosition = { x: sticker.x, y: sticker.y };
-    positionRef.current = nextPosition;
-    setPosition(nextPosition);
-  }, [sticker.x, sticker.y]);
-
-  const updatePosition = (x: number, y: number) => {
-    const nextPosition = { x: Math.max(0, x), y: Math.max(0, y) };
-    positionRef.current = nextPosition;
-    setPosition(nextPosition);
-  };
-
-  const commitPosition = () => {
-    isDragging.current = false;
-    onUpdatePosition(sticker.id, positionRef.current.x, positionRef.current.y);
-  };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => Platform.OS !== "web",
-      onMoveShouldSetPanResponder: () => Platform.OS !== "web",
-      onPanResponderGrant: () => {
-        dragOrigin.current = positionRef.current;
-        isDragging.current = true;
-      },
-      onPanResponderMove: (_, gestureState) => {
-        updatePosition(dragOrigin.current.x + gestureState.dx, dragOrigin.current.y + gestureState.dy);
-      },
-      onPanResponderRelease: commitPosition,
-      onPanResponderTerminate: commitPosition,
-    }),
-  ).current;
-
-  const handlePointerDown = (event: any) => {
-    if (Platform.OS !== "web") return;
-
-    event.stopPropagation();
-    event.preventDefault();
-    event.target?.setPointerCapture?.(event.pointerId);
-    dragOffset.current = {
-      x: event.clientX - positionRef.current.x,
-      y: event.clientY - positionRef.current.y,
-    };
-    isDragging.current = true;
-  };
-
-  const handlePointerMove = (event: any) => {
-    if (Platform.OS !== "web" || !isDragging.current) return;
-
-    event.preventDefault();
-    updatePosition(event.clientX - dragOffset.current.x, event.clientY - dragOffset.current.y);
-  };
-
-  const handlePointerUp = (event: any) => {
-    if (Platform.OS !== "web" || !isDragging.current) return;
-
-    event.target?.releasePointerCapture?.(event.pointerId);
-    commitPosition();
-  };
-
-  return (
-    <View
-      {...(Platform.OS === "web" ? {
-        onPointerDown: handlePointerDown,
-        onPointerMove: handlePointerMove,
-        onPointerUp: handlePointerUp,
-      } : panResponder.panHandlers)}
-      style={[
-        styles.stickerPosition,
-        {
-          left: position.x,
-          top: position.y,
-          transform: [{ rotate: `${sticker.rotation}deg` }],
-          cursor: isDragging.current ? "grabbing" : "grab",
-          userSelect: "none",
-        } as any,
-      ]}
-    >
-      <Text style={styles.stickerEmoji}>{sticker.emoji}</Text>
-      <Pressable
-        onPress={(event) => {
-          event.stopPropagation();
-          onDelete(sticker.id);
-        }}
-        style={styles.stickerDeleteBadge}
-      >
-        <Text style={styles.stickerDeleteText}>✕</Text>
-      </Pressable>
-    </View>
-  );
-}
-
 function VisualRichEditor({
   content,
   textColor,
   onChangeContent,
   onActionsReady,
+  onFocusEditor,
 }: {
   content: string;
   textColor: string;
   onChangeContent: (html: string) => void;
   onActionsReady: (actions: RichTextActions) => void;
+  onFocusEditor?: () => void;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const selectionRef = useRef<Range | null>(null);
@@ -307,6 +189,7 @@ function VisualRichEditor({
       <TextInput
         value={content}
         onChangeText={onChangeContent}
+        onFocus={onFocusEditor}
         multiline
         placeholder="Start typing your notes, lecture summaries, or ideas..."
         placeholderTextColor={textColor === "#F8FAFC" ? "#CBD5E1" : "#64748B"}
@@ -323,7 +206,10 @@ function VisualRichEditor({
       suppressContentEditableWarning
       data-placeholder="Start typing your lecture summaries, ideas, or to-dos..."
       onInput={syncContent}
-      onFocus={rememberSelection}
+      onFocus={() => {
+        rememberSelection();
+        onFocusEditor?.();
+      }}
       onKeyUp={rememberSelection}
       onMouseUp={rememberSelection}
       onChange={(event: any) => {
@@ -361,9 +247,14 @@ export default function NoteEditorScreen() {
   const [body, setBody] = useState(String(params.content ?? ""));
   const [paperTheme, setPaperTheme] = useState(String(params.color ?? DEFAULT_COLOR));
   const [isPinned, setIsPinned] = useState(String(params.isPinned ?? "false") === "true");
-  const [stickers, setStickers] = useState<PlacedSticker[]>([]);
+  const [placedStickers, setPlacedStickers] = useState<NotePlacedSticker[]>([]);
+  const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const checklistInputRefs = useRef<{ [key: string]: TextInput | null }>({});
   const [attachments, setAttachments] = useState<NoteAttachment[]>([]);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [isStickerDrawerOpen, setIsStickerDrawerOpen] = useState(false);
+  const [selectedPackTab, setSelectedPackTab] = useState<string>("all");
+  const { availableStickers, packTabs, reloadStickers } = useAvailableStickers();
   const [statusText, setStatusText] = useState("Autosaved");
   const [isLoaded, setIsLoaded] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -406,7 +297,8 @@ export default function NoteEditorScreen() {
                 (attachment.type === "image" || attachment.type === "file") && Boolean(attachment.uri),
             ),
           );
-          setStickers(match.stickers || []);
+          setPlacedStickers(match.stickers || []);
+          setChecklist(match.checklist || []);
         }
       } catch {
         // ignore parsing errors and continue with defaults
@@ -426,7 +318,7 @@ export default function NoteEditorScreen() {
     }, 180);
 
     return () => clearTimeout(timeout);
-  }, [title, body, paperTheme, isPinned, stickers, attachments, isLoaded]);
+  }, [title, body, paperTheme, isPinned, placedStickers, attachments, checklist, isLoaded]);
 
   const persistCurrentNote = async () => {
     const finalTitle = title.trim() || "Untitled Note";
@@ -438,7 +330,8 @@ export default function NoteEditorScreen() {
       isPinned,
       updatedAt: new Date().toISOString(),
       attachments,
-      stickers,
+      stickers: placedStickers,
+      checklist,
     };
 
     try {
@@ -465,23 +358,31 @@ export default function NoteEditorScreen() {
     }
   };
 
-  const addStickerToCanvas = (sticker: StickerItem) => {
-    setStickers((prev) => {
-      const next: PlacedSticker[] = [
-        ...prev,
-        {
-          ...sticker,
-          id: `${sticker.id}-${Date.now()}`,
-          x: 140 + (prev.length % 4) * 36,
-          y: 120 + (prev.length % 3) * 32,
-          rotation: (prev.length % 5) * 5,
-        },
-      ];
-      return next;
-    });
+  const handlePlaceStickerOnNote = (stickerItem: AvailableStickerItem) => {
+    const newSticker = createPlacedSticker(
+      stickerItem.id,
+      stickerItem.imageUrl,
+      140,
+      180,
+      placedStickers.length + 1,
+      stickerItem.name
+    );
+    setPlacedStickers((prev) => [...prev, newSticker]);
+    setSelectedStickerId(newSticker.id);
     setStatusText("Autosaved");
-    setPickerOpen(false);
+    setIsStickerDrawerOpen(false);
   };
+
+  useEffect(() => {
+    if (isStickerDrawerOpen) {
+      void reloadStickers();
+    }
+  }, [isStickerDrawerOpen]);
+
+  const visibleStickers =
+    selectedPackTab === "all"
+      ? availableStickers
+      : availableStickers.filter((s) => s.packId === selectedPackTab);
 
   const addAttachment = (attachment: NoteAttachment) => {
     setAttachments((prev) => [attachment, ...prev]);
@@ -543,16 +444,51 @@ export default function NoteEditorScreen() {
     setStatusText("Autosaved");
   };
 
-  const removeSticker = (id: string) => {
-    setStickers((prev) => prev.filter((sticker) => sticker.id !== id));
+  const handleDeleteSticker = (id: string) => {
+    setPlacedStickers((prev) => prev.filter((sticker) => sticker.id !== id));
+    if (selectedStickerId === id) setSelectedStickerId(null);
     setStatusText("Autosaved");
   };
 
-  const updateStickerPosition = (id: string, x: number, y: number) => {
-    setStickers((prev) =>
-      prev.map((sticker) => (sticker.id === id ? { ...sticker, x, y } : sticker)),
-    );
+  const handleUpdateSticker = (updated: NotePlacedSticker) => {
+    setPlacedStickers((prev) => prev.map((sticker) => (sticker.id === updated.id ? updated : sticker)));
     setStatusText("Autosaved");
+  };
+
+  // Enter key on a checklist row -> inserts a new checkbox line and focuses it
+  const handleAddChecklistItemAfter = (index: number) => {
+    const newItem: ChecklistItem = {
+      id: `item-${Date.now()}`,
+      text: "",
+      checked: false,
+    };
+    const updated = [...checklist];
+    updated.splice(index + 1, 0, newItem);
+    setChecklist(updated);
+
+    setTimeout(() => {
+      checklistInputRefs.current[newItem.id]?.focus();
+    }, 50);
+  };
+
+  // Backspace on an empty checklist row -> removes it and focuses the previous line
+  const handleDeleteChecklistItem = (index: number, currentText: string) => {
+    if (currentText === "" && checklist.length > 1) {
+      const prevItem = checklist[index - 1];
+      const updated = checklist.filter((_, idx) => idx !== index);
+      setChecklist(updated);
+      if (prevItem) {
+        setTimeout(() => {
+          checklistInputRefs.current[prevItem.id]?.focus();
+        }, 50);
+      }
+    }
+  };
+
+  const addChecklistSection = () => {
+    if (checklist.length === 0) {
+      setChecklist([{ id: `item-${Date.now()}`, text: "", checked: false }]);
+    }
   };
 
   const applyRichTextCommand = (command: string, value?: string) => {
@@ -570,11 +506,6 @@ export default function NoteEditorScreen() {
   const webSelectionGuard = Platform.OS === "web"
     ? { onMouseDown: (event: any) => event.preventDefault() }
     : {};
-
-  const insertRichChecklist = () => {
-    richTextActionsRef.current?.insertChecklist();
-    setStatusText("Autosaved");
-  };
 
   const togglePin = async () => {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -606,7 +537,7 @@ export default function NoteEditorScreen() {
               <Text style={styles.pinButtonText}>{isPinned ? "📌 Pinned" : "📌 Pin to Top"}</Text>
             </Pressable>
 
-            <Pressable onPress={() => setPickerOpen(true)} style={styles.themeButton}>
+            <Pressable onPress={() => setIsStickerDrawerOpen(true)} style={styles.themeButton}>
               <Text style={styles.themeButtonText}>🎨 Theme</Text>
             </Pressable>
 
@@ -664,22 +595,78 @@ export default function NoteEditorScreen() {
                 <Text style={styles.dropBannerText}>📁 Drop photos or documents to attach</Text>
               </View>
             )}
-            <VisualRichEditor
-              content={body}
-              textColor={activeTheme.textColor}
-              onChangeContent={setBody}
-              onActionsReady={(actions) => {
-                richTextActionsRef.current = actions;
-              }}
-            />
+
+            <ScrollView style={styles.canvasScroll} contentContainerStyle={styles.canvasContent} keyboardShouldPersistTaps="handled">
+              {checklist.length > 0 && (
+              <View style={styles.checklistSection}>
+                {checklist.map((item, index) => (
+                  <View key={item.id} style={styles.checkItemRow}>
+                    <Pressable
+                      onPress={() => {
+                        setChecklist((prev) =>
+                          prev.map((it) =>
+                            it.id === item.id ? { ...it, checked: !it.checked } : it
+                          )
+                        );
+                      }}
+                      style={[styles.checkboxBox, item.checked && styles.checkboxBoxActive]}
+                    >
+                      {item.checked && <Text style={styles.checkMark}>✓</Text>}
+                    </Pressable>
+
+                    <TextInput
+                      ref={(ref) => (checklistInputRefs.current[item.id] = ref)}
+                      value={item.text}
+                      onChangeText={(val) => {
+                        setChecklist((prev) =>
+                          prev.map((it) => (it.id === item.id ? { ...it, text: val } : it))
+                        );
+                      }}
+                      placeholder="List item..."
+                      placeholderTextColor="#94A3B8"
+                      style={[
+                        styles.checkItemInput,
+                        item.checked && styles.checkItemInputChecked,
+                      ]}
+                      returnKeyType="next"
+                      blurOnSubmit={false}
+                      onSubmitEditing={() => handleAddChecklistItemAfter(index)}
+                      onKeyPress={({ nativeEvent }) => {
+                        if (nativeEvent.key === "Enter") {
+                          if (Platform.OS === "web") {
+                            (nativeEvent as any).preventDefault?.();
+                          }
+                          handleAddChecklistItemAfter(index);
+                        } else if (nativeEvent.key === "Backspace") {
+                          handleDeleteChecklistItem(index, item.text);
+                        }
+                      }}
+                    />
+                  </View>
+                ))}
+              </View>
+              )}
+
+              <VisualRichEditor
+                content={body}
+                textColor={activeTheme.textColor}
+                onChangeContent={setBody}
+                onFocusEditor={() => setSelectedStickerId(null)}
+                onActionsReady={(actions) => {
+                  richTextActionsRef.current = actions;
+                }}
+              />
+            </ScrollView>
 
             <View pointerEvents="box-none" style={[StyleSheet.absoluteFillObject, styles.stickerCanvas]}>
-              {stickers.map((sticker) => (
-                <DraggableSticker
+              {placedStickers.map((sticker) => (
+                <DraggableNoteSticker
                   key={sticker.id}
                   sticker={sticker}
-                  onUpdatePosition={updateStickerPosition}
-                  onDelete={removeSticker}
+                  isSelected={selectedStickerId === sticker.id}
+                  onSelect={() => setSelectedStickerId(sticker.id)}
+                  onUpdate={handleUpdateSticker}
+                  onDelete={handleDeleteSticker}
                 />
               ))}
             </View>
@@ -754,12 +741,12 @@ export default function NoteEditorScreen() {
               )}
             </View>
 
-            <Pressable {...webSelectionGuard} onPress={insertRichChecklist} style={styles.toolbarButton}>
+            <Pressable {...webSelectionGuard} onPress={addChecklistSection} style={styles.toolbarButton}>
               <Text style={styles.toolbarIcon}>☑️</Text>
               <Text style={styles.toolbarLabel}>Checklist</Text>
             </Pressable>
 
-            <Pressable onPress={() => setPickerOpen(true)} style={styles.toolbarButton}>
+            <Pressable onPress={() => setIsStickerDrawerOpen(true)} style={styles.toolbarButton}>
               <Text style={styles.toolbarIcon}>🏷</Text>
               <Text style={styles.toolbarLabel}>Stickers</Text>
             </Pressable>
@@ -786,37 +773,136 @@ export default function NoteEditorScreen() {
         )}
       </View>
 
-      <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
-        <Pressable style={styles.sheetOverlay} onPress={() => setPickerOpen(false)}>
-          <Pressable style={styles.sheetCard} onPress={() => {}}>
+      {isStickerDrawerOpen && (
+        <View style={styles.drawerOverlay}>
+          <View style={styles.whatsappSheet}>
+            {/* 1. Header Bar with Close Button */}
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Sticker Drawer</Text>
-              <Pressable onPress={() => setPickerOpen(false)} style={styles.sheetCloseButton}>
-                <Text style={styles.sheetCloseText}>✕</Text>
+              <View style={styles.dragPill} />
+              <View style={styles.sheetHeaderRow}>
+                <Text style={styles.sheetTitle}>
+                  {selectedPackTab === "all"
+                    ? "All Stickers"
+                    : packTabs.find((t) => t.id === selectedPackTab)?.title || "Stickers"}
+                </Text>
+                <Pressable
+                  onPress={() => setIsStickerDrawerOpen(false)}
+                  style={styles.closeBtn}
+                >
+                  <Text style={styles.closeBtnText}>✕</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* 2. WhatsApp-Style Pack Icon Tabs */}
+            <View style={styles.packTabBar}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.packTabScroll}
+              >
+                {/* 'All' Tab */}
+                <Pressable
+                  onPress={() => setSelectedPackTab("all")}
+                  style={[
+                    styles.packTabIconBtn,
+                    selectedPackTab === "all" && styles.packTabIconBtnActive,
+                  ]}
+                >
+                  <Text style={{ fontSize: 18 }}>⭐</Text>
+                </Pressable>
+
+                {/* Individual Pack Icons */}
+                {packTabs.map((tab) => {
+                  const isActive = selectedPackTab === tab.id;
+                  const isImgUrl = tab.coverIcon?.startsWith("http");
+
+                  return (
+                    <Pressable
+                      key={tab.id}
+                      onPress={() => setSelectedPackTab(tab.id)}
+                      style={[
+                        styles.packTabIconBtn,
+                        isActive && styles.packTabIconBtnActive,
+                      ]}
+                    >
+                      {isImgUrl ? (
+                        <Image
+                          source={{ uri: tab.coverIcon }}
+                          style={styles.packTabImg}
+                        />
+                      ) : (
+                        <Text style={{ fontSize: 18 }}>
+                          {tab.coverIcon || "🎨"}
+                        </Text>
+                      )}
+                      {isActive && <View style={styles.activeIndicator} />}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* 3. Compact Sticker Grid with Fixed Height & Scroll */}
+            <ScrollView
+              style={styles.stickerScrollArea}
+              contentContainerStyle={styles.compactStickerGrid}
+              showsVerticalScrollIndicator={true}
+            >
+              {visibleStickers.length === 0 ? (
+                <View style={styles.emptyDrawer}>
+                  <Text style={{ fontSize: 24, marginBottom: 4 }}>📦</Text>
+                  <Text style={styles.emptyDrawerText}>No stickers in this pack</Text>
+                </View>
+              ) : (
+                visibleStickers.map((sticker) => {
+                  const isUrl = sticker.imageUrl?.startsWith("http");
+                  return (
+                    <Pressable
+                      key={sticker.id}
+                      onPress={() => {
+                        handlePlaceStickerOnNote(sticker);
+                        setIsStickerDrawerOpen(false);
+                      }}
+                      style={({ pressed }) => [
+                        styles.compactStickerTile,
+                        pressed && styles.tilePressed,
+                      ]}
+                    >
+                      {isUrl ? (
+                        <Image
+                          source={{ uri: sticker.imageUrl }}
+                          style={styles.compactStickerImg}
+                        />
+                      ) : (
+                        <Text style={styles.compactStickerEmoji}>
+                          {sticker.imageUrl}
+                        </Text>
+                      )}
+                      <Text style={styles.compactStickerLabel} numberOfLines={1}>
+                        {sticker.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            {/* 4. Footer Link to Marketplace */}
+            <View style={styles.sheetFooter}>
+              <Pressable
+                onPress={() => {
+                  setIsStickerDrawerOpen(false);
+                  router.push("/sticker-marketplace");
+                }}
+                style={styles.getMoreBtn}
+              >
+                <Text style={styles.getMoreBtnText}>+ Get More Stickers in Marketplace</Text>
               </Pressable>
             </View>
-
-            <View style={styles.stickerGrid}>
-              {STICKER_LIBRARY.map((sticker) => (
-                <Pressable key={sticker.id} onPress={() => addStickerToCanvas(sticker)} style={styles.stickerButton}>
-                  <Text style={styles.stickerEmojiLarge}>{sticker.emoji}</Text>
-                  <Text style={styles.stickerLabel}>{sticker.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Pressable
-              onPress={() => {
-                setPickerOpen(false);
-                router.push("/sticker-marketplace");
-              }}
-              style={styles.marketplaceButton}
-            >
-              <Text style={styles.marketplaceText}>+ Get More Stickers in Marketplace</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -975,6 +1061,13 @@ const styles = StyleSheet.create({
     minHeight: 400,
     overflow: "hidden",
   },
+  canvasScroll: {
+    flex: 1,
+  },
+  canvasContent: {
+    padding: 24,
+    paddingBottom: 80,
+  },
   canvasShellDragging: {
     borderColor: "#FD0000",
     borderStyle: "dashed",
@@ -1002,42 +1095,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     pointerEvents: "box-none",
-  },
-  stickerPosition: {
-    position: "absolute",
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.75)",
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  stickerEmoji: {
-    fontSize: 20,
-  },
-  stickerDeleteBadge: {
-    position: "absolute",
-    right: -6,
-    top: -6,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stickerDeleteText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#0F172A",
   },
   noteBody: {
     fontSize: 15,
@@ -1204,77 +1261,229 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(15,23,42,0.14)",
   },
-  sheetOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15,23,42,0.3)",
+  /* Fixed Bottom Modal & Sheet */
+  drawerOverlay: {
+    position: "fixed" as any,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
     justifyContent: "flex-end",
+    alignItems: "center",
+    zIndex: 999999,
   },
-  sheetCard: {
+  whatsappSheet: {
+    width: "100%",
+    maxWidth: 680,
+    height: 380,
+    maxHeight: "65%",
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 18,
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    boxShadow: "0 -8px 24px rgba(15, 23, 42, 0.15)",
   },
   sheetHeader: {
-    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
     alignItems: "center",
+  },
+  dragPill: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#CBD5E1",
+    marginBottom: 8,
+  },
+  sheetHeaderRow: {
+    width: "100%",
+    flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 16,
+    alignItems: "center",
   },
   sheetTitle: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: "800",
     color: "#0F172A",
   },
-  sheetCloseButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "#F3F4F6",
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+  },
+  closeBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#475569",
+  },
+
+  /* WhatsApp Style Horizontal Pack Tabs */
+  packTabBar: {
+    backgroundColor: "#F8FAFC",
+    borderBottomWidth: 1.5,
+    borderBottomColor: "#E2E8F0",
+    paddingVertical: 6,
+  },
+  packTabScroll: {
+    paddingHorizontal: 12,
+    gap: 8,
+    alignItems: "center",
+  },
+  packTabIconBtn: {
+    width: 44,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    cursor: "pointer",
+  },
+  packTabIconBtnActive: {
+    borderColor: "#0F172A",
+    backgroundColor: "#F1F5F9",
+  },
+  packTabImg: {
+    width: 24,
+    height: 24,
+    resizeMode: "contain",
+  },
+  activeIndicator: {
+    position: "absolute",
+    bottom: -6,
+    width: 16,
+    height: 3,
+    backgroundColor: "#FD0000",
+    borderRadius: 2,
+  },
+
+  /* Scrollable Compact Grid */
+  stickerScrollArea: {
+    flex: 1,
+    backgroundColor: "#FAFAFA",
+  },
+  compactStickerGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: 12,
+    gap: 10,
+    justifyContent: "flex-start",
+  },
+  compactStickerTile: {
+    width: 68,
+    height: 72,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 4,
+    cursor: "pointer",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
+  },
+  tilePressed: {
+    transform: [{ scale: 0.94 }],
+    backgroundColor: "#FFF5F5",
+    borderColor: "#FD0000",
+  },
+  compactStickerImg: {
+    width: 36,
+    height: 36,
+    resizeMode: "contain",
+  },
+  compactStickerEmoji: {
+    fontSize: 28,
+  },
+  compactStickerLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#64748B",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  emptyDrawer: {
+    width: "100%",
+    padding: 30,
     alignItems: "center",
     justifyContent: "center",
   },
-  sheetCloseText: {
+  emptyDrawerText: {
     fontSize: 12,
-    fontWeight: "800",
-    color: "#0F172A",
-  },
-  stickerGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  stickerButton: {
-    width: "30%",
-    backgroundColor: "#FAF7F2",
-    borderRadius: 16,
-    padding: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  stickerEmojiLarge: {
-    fontSize: 26,
-  },
-  stickerLabel: {
-    marginTop: 8,
-    fontSize: 11,
     fontWeight: "700",
-    color: "#0F172A",
-    textAlign: "center",
+    color: "#94A3B8",
   },
-  marketplaceButton: {
+
+  /* Footer */
+  sheetFooter: {
+    padding: 10,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  getMoreBtn: {
     backgroundColor: "#FD0000",
+    paddingVertical: 10,
     borderRadius: 12,
-    paddingVertical: 12,
     alignItems: "center",
-    marginTop: 18,
+    cursor: "pointer",
   },
-  marketplaceText: {
+  getMoreBtnText: {
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
+  },
+  checklistSection: {
+    marginBottom: 16,
+  },
+  checkItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 10,
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    cursor: "pointer",
+  },
+  checkboxBoxActive: {
+    backgroundColor: "#6366F1",
+    borderColor: "#6366F1",
+  },
+  checkMark: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  checkItemInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#0F172A",
+    paddingVertical: 4,
+  },
+  checkItemInputChecked: {
+    textDecorationLine: "line-through",
+    color: "#94A3B8",
   },
 });
