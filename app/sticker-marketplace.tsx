@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -197,6 +198,9 @@ const DEFAULT_PACKS: StickerPack[] = [
 
 export default function StickerMarketplaceScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+
   const [diamonds, setDiamonds] = useState<number>(0);
   const [selectedCategory, setSelectedCategory] = useState<string>("All Packs");
   const [activeTab, setActiveTab] = useState<"Recommended" | "Trending" | "Owned">("Recommended");
@@ -210,7 +214,6 @@ export default function StickerMarketplaceScreen() {
 
   const toastTimerRef = useRef<any>(null);
 
-  // Automatically normalize previous submissions like "r.bandara" to "Maneesha"
   const formatDisplayName = (name: string): string => {
     if (!name) return "Maneesha";
     if (name === OFFICIAL_CREATOR) return OFFICIAL_CREATOR;
@@ -224,7 +227,6 @@ export default function StickerMarketplaceScreen() {
     return name;
   };
 
-  // 1. Dynamic Fetching from Supabase & Mapping
   const refreshPacks = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -240,7 +242,6 @@ export default function StickerMarketplaceScreen() {
         if (prof?.nickname) currentStudentNickname = prof.nickname;
       }
 
-      // Fetch from Supabase
       const { data } = await supabase
         .from("sticker_packs")
         .select(`
@@ -259,7 +260,6 @@ export default function StickerMarketplaceScreen() {
         .eq("status", "approved")
         .order("created_at", { ascending: false });
 
-      // Fetch locally published packs
       const rawLocalPacks = await AsyncStorage.getItem("@uni_ami_created_packs_data");
       const localPacks = rawLocalPacks ? JSON.parse(rawLocalPacks) : [];
 
@@ -317,7 +317,6 @@ export default function StickerMarketplaceScreen() {
         });
       }
 
-      // Merge locally stored packs
       const existingIds = new Set(mapped.map((m) => m.id));
       for (const lp of localPacks) {
         if (!existingIds.has(lp.id)) {
@@ -343,7 +342,6 @@ export default function StickerMarketplaceScreen() {
         }
       }
 
-      // Combine with starter default packs
       const combined = [
         ...mapped,
         ...DEFAULT_PACKS.filter((dp) => !existingIds.has(dp.id)),
@@ -358,7 +356,6 @@ export default function StickerMarketplaceScreen() {
     }
   }, []);
 
-  // 2. Load Owned Packs & Diamonds
   const refreshOwnedPacks = useCallback(async () => {
     try {
       const savedOwned = await AsyncStorage.getItem("@uni_ami_owned_packs");
@@ -473,7 +470,6 @@ export default function StickerMarketplaceScreen() {
     }
   };
 
-  // 3. Filter Logic
   const filteredPacks = packs.filter((p) => {
     const matchesSearch =
       p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -501,47 +497,55 @@ export default function StickerMarketplaceScreen() {
         </View>
       )}
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[styles.content, isMobile && styles.contentMobile]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Top Header */}
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.replace("/")}
-            style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
-          >
-            <Text style={styles.backBtnText}>←</Text>
-          </Pressable>
+        <View style={[styles.header, isMobile && styles.headerMobile]}>
+          <View style={styles.headerTopRowMobile}>
+            <Pressable
+              onPress={() => router.replace("/")}
+              style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.backBtnText}>←</Text>
+            </Pressable>
 
-          <View style={styles.headerTextGroup}>
-            <Text style={styles.title}>Sticker Marketplace</Text>
-            <Text style={styles.subtitle}>
-              Discover, collect, and unlock student-created sticker packs.
-            </Text>
+            <View style={styles.headerTextGroup}>
+              <Text style={[styles.title, isMobile && styles.titleMobile]}>Sticker Marketplace</Text>
+              <Text style={[styles.subtitle, isMobile && styles.subtitleMobile]}>
+                Discover, collect, and unlock student-created packs.
+              </Text>
+            </View>
           </View>
 
-          <Pressable
-            onPress={() => router.push("/creator-studio")}
-            style={({ pressed }) => [styles.submitPackBtn, pressed && styles.pressed]}
-          >
-            <Text style={styles.submitPackBtnText}>+ Submit Pack / Earn</Text>
-          </Pressable>
+          <View style={[styles.headerActionGroup, isMobile && styles.headerActionGroupMobile]}>
+            <Pressable
+              onPress={() => router.push("/creator-studio")}
+              style={({ pressed }) => [styles.submitPackBtn, isMobile && styles.submitPackBtnMobile, pressed && styles.pressed]}
+            >
+              <Text style={styles.submitPackBtnText}>+ Submit / Earn</Text>
+            </Pressable>
 
-          <Pressable
-            onPress={() => setIsVideoOpen(true)}
-            style={({ pressed }) => [styles.diamondPill, pressed && styles.pressed]}
-          >
-            <View style={styles.diamondRow}>
-              <Text style={styles.diamondCount}>{diamonds}</Text>
-              <Text style={styles.gemIcon}>💎</Text>
-            </View>
-            <Text style={styles.earnBadge}>Earn +10 💎</Text>
-          </Pressable>
+            <Pressable
+              onPress={() => setIsVideoOpen(true)}
+              style={({ pressed }) => [styles.diamondPill, isMobile && styles.diamondPillMobile, pressed && styles.pressed]}
+            >
+              <View style={styles.diamondRow}>
+                <Text style={styles.diamondCount}>{diamonds}</Text>
+                <Text style={styles.gemIcon}>💎</Text>
+              </View>
+              <Text style={styles.earnBadge}>Earn +10 💎</Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* Search */}
-        <View style={styles.searchBox}>
-          <Text style={{ fontSize: 14, marginRight: 8 }}>🔍</Text>
+        <View style={[styles.searchBox, isMobile && styles.searchBoxMobile]}>
+          <Text style={{ fontSize: 13, marginRight: 8 }}>🔍</Text>
           <TextInput
-            placeholder="Search sticker packs, creators, or topics..."
+            placeholder="Search packs, creators, topics..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -553,7 +557,7 @@ export default function StickerMarketplaceScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryList}
+          contentContainerStyle={[styles.categoryList, isMobile && styles.categoryListMobile]}
         >
           {CATEGORIES.map((cat) => {
             const isActive = selectedCategory === cat;
@@ -586,8 +590,8 @@ export default function StickerMarketplaceScreen() {
         </ScrollView>
 
         {/* Section Row */}
-        <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>
+        <View style={[styles.sectionRow, isMobile && styles.sectionRowMobile]}>
+          <Text style={[styles.sectionTitle, isMobile && styles.sectionTitleMobile]}>
             {selectedCategory === "Student Creators 🌟" ? "Student Creations" : "Featured Packs"}
           </Text>
 
@@ -630,67 +634,73 @@ export default function StickerMarketplaceScreen() {
             </Text>
           </View>
         ) : (
-          <View style={styles.cardsGrid}>
+          <View style={[styles.cardsGrid, isMobile && styles.cardsGridMobile]}>
             {filteredPacks.map((pack) => {
               const isOwned = ownedPackIds.includes(pack.id);
               const isCoverUrl = pack.icon?.startsWith("http");
 
               return (
-                <View key={pack.id} style={styles.card}>
+                <View key={pack.id} style={[styles.card, isMobile && styles.cardMobile]}>
                   {/* Card Cover Preview */}
-                  <Pressable onPress={() => setSelectedPackPreview(pack)} style={styles.cardPreview}>
+                  <Pressable
+                    onPress={() => setSelectedPackPreview(pack)}
+                    style={[styles.cardPreview, isMobile && styles.cardPreviewMobile]}
+                  >
                     {isCoverUrl ? (
-                      <Image source={{ uri: pack.icon }} style={styles.packImageCover} />
+                      <Image source={{ uri: pack.icon }} style={isMobile ? styles.packImageCoverMobile : styles.packImageCover} />
                     ) : (
-                      <Text style={styles.packEmoji}>{pack.icon}</Text>
+                      <Text style={isMobile ? styles.packEmojiMobile : styles.packEmoji}>{pack.icon}</Text>
                     )}
 
                     <View style={styles.previewTag}>
-                      <Text style={styles.previewTagText}>View Stickers</Text>
+                      <Text style={styles.previewTagText}>{isMobile ? "View" : "View Stickers"}</Text>
                     </View>
 
                     {pack.isStudentPack && (
                       <View style={styles.creatorVerificationBadge}>
-                        <Text style={styles.creatorVerificationText}>STUDENT ARTIST 🌟</Text>
+                        <Text style={styles.creatorVerificationText}>{isMobile ? "STUDENT 🌟" : "STUDENT ARTIST 🌟"}</Text>
                       </View>
                     )}
 
                     <View style={styles.stickerCountTag}>
-                      <Text style={styles.stickerCountText}>{pack.stickers.length} stickers</Text>
+                      <Text style={styles.stickerCountText}>{pack.stickers.length} {isMobile ? "pcs" : "stickers"}</Text>
                     </View>
                   </Pressable>
 
                   {/* Card Body */}
-                  <View style={styles.cardBody}>
+                  <View style={[styles.cardBody, isMobile && styles.cardBodyMobile]}>
                     <Pressable onPress={() => setSelectedPackPreview(pack)}>
-                      <Text style={styles.packTitle} numberOfLines={1}>{pack.title}</Text>
+                      <Text style={[styles.packTitle, isMobile && styles.packTitleMobile]} numberOfLines={1}>{pack.title}</Text>
                     </Pressable>
 
-                    {/* Creator Row Without Avatar Circles */}
                     <View style={styles.creatorRow}>
                       <Text style={styles.creatorText} numberOfLines={1}>
                         {pack.creator}
                       </Text>
                       {pack.isStudentPack && (
-                        <Text style={styles.creatorUniSub}>• Student Verified ✓</Text>
+                        <Text style={styles.creatorUniSub}>• Verified ✓</Text>
                       )}
                     </View>
 
                     {/* Actions */}
                     {isOwned ? (
-                      <Pressable onPress={() => setSelectedPackPreview(pack)} style={styles.ownedButton}>
-                        <Text style={styles.ownedButtonText}>✓ Owned • Open Pack</Text>
+                      <Pressable
+                        onPress={() => setSelectedPackPreview(pack)}
+                        style={[styles.ownedButton, isMobile && styles.ownedButtonMobile]}
+                      >
+                        <Text style={styles.ownedButtonText}>{isMobile ? "✓ Owned" : "✓ Owned • Open Pack"}</Text>
                       </Pressable>
                     ) : (
-                      <View style={styles.buttonStack}>
+                      <View style={[styles.buttonStack, isMobile && styles.buttonStackMobile]}>
                         <Pressable
                           onPress={() => handleBuyCash(pack)}
                           style={({ pressed }) => [
                             styles.buyButton,
+                            isMobile && styles.buyButtonMobile,
                             pressed && styles.pressed,
                           ]}
                         >
-                          <Text style={styles.buyButtonText}>
+                          <Text style={[styles.buyButtonText, isMobile && styles.buyButtonTextMobile]}>
                             Buy {pack.priceAud}
                           </Text>
                         </Pressable>
@@ -700,11 +710,12 @@ export default function StickerMarketplaceScreen() {
                             onPress={() => handleUnlockGems(pack)}
                             style={({ pressed }) => [
                               styles.unlockButton,
+                              isMobile && styles.unlockButtonMobile,
                               pressed && styles.pressed,
                             ]}
                           >
-                            <Text style={styles.unlockButtonText}>
-                              Unlock with {pack.gems} 💎
+                            <Text style={[styles.unlockButtonText, isMobile && styles.unlockButtonTextMobile]}>
+                              {pack.gems} 💎
                             </Text>
                           </Pressable>
                         )}
@@ -820,7 +831,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 24,
     zIndex: 99999,
-    boxShadow: "0 4px 8px rgba(0, 0, 0, 0.2)",
   },
   toastText: {
     color: "#FFFFFF",
@@ -836,11 +846,27 @@ const styles = StyleSheet.create({
     width: "100%",
     alignSelf: "center",
   },
+  contentMobile: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 32,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 20,
     flexWrap: "wrap",
+    gap: 12,
+  },
+  headerMobile: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: 12,
+    marginBottom: 16,
+  },
+  headerTopRowMobile: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
   },
   backBtn: {
@@ -852,7 +878,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1.5,
     borderColor: "#CBD5E1",
-    cursor: "pointer",
   },
   backBtnText: {
     fontSize: 18,
@@ -861,24 +886,42 @@ const styles = StyleSheet.create({
   },
   headerTextGroup: {
     flex: 1,
-    minWidth: 200,
+    minWidth: 180,
   },
   title: {
     fontSize: 22,
     fontWeight: "900",
     color: "#0F172A",
   },
+  titleMobile: {
+    fontSize: 19,
+  },
   subtitle: {
     fontSize: 12,
     color: "#64748B",
     marginTop: 2,
+  },
+  subtitleMobile: {
+    fontSize: 11.5,
+  },
+  headerActionGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  headerActionGroupMobile: {
+    justifyContent: "flex-end",
+    gap: 8,
   },
   submitPackBtn: {
     backgroundColor: "#0F172A",
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    cursor: "pointer",
+  },
+  submitPackBtnMobile: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   submitPackBtnText: {
     fontSize: 12,
@@ -894,7 +937,10 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
-    cursor: "pointer",
+  },
+  diamondPillMobile: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   diamondRow: {
     flexDirection: "row",
@@ -902,18 +948,18 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   diamondCount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
     color: "#0F172A",
   },
   gemIcon: {
-    fontSize: 12,
+    fontSize: 11,
   },
   earnBadge: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: "800",
     color: "#FD0000",
-    marginTop: 2,
+    marginTop: 1,
   },
   searchBox: {
     flexDirection: "row",
@@ -926,6 +972,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 16,
   },
+  searchBoxMobile: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginBottom: 14,
+  },
   searchInput: {
     flex: 1,
     fontSize: 13,
@@ -937,6 +989,9 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 24,
   },
+  categoryListMobile: {
+    marginBottom: 16,
+  },
   categoryPill: {
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
@@ -944,7 +999,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
-    cursor: "pointer",
   },
   categoryPillActive: {
     backgroundColor: "#FD0000",
@@ -979,10 +1033,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
   },
+  sectionRowMobile: {
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "900",
     color: "#0F172A",
+  },
+  sectionTitleMobile: {
+    fontSize: 16,
   },
   tabsContainer: {
     flexDirection: "row",
@@ -994,7 +1054,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 9,
-    cursor: "pointer",
   },
   tabButtonActive: {
     backgroundColor: "#FFFFFF",
@@ -1038,6 +1097,10 @@ const styles = StyleSheet.create({
     gap: 16,
     justifyContent: "flex-start",
   },
+  cardsGridMobile: {
+    gap: 10,
+    justifyContent: "space-between",
+  },
   card: {
     width: "31.8%",
     minWidth: 280,
@@ -1048,137 +1111,179 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
     overflow: "hidden",
   },
+  cardMobile: {
+    width: "48.2%",
+    minWidth: "48.2%",
+    borderRadius: 16,
+  },
   cardPreview: {
     height: 140,
     backgroundColor: "#FFF5F5",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
-    cursor: "pointer",
+  },
+  cardPreviewMobile: {
+    height: 105,
   },
   packImageCover: {
     width: 80,
     height: 80,
     resizeMode: "contain",
   },
+  packImageCoverMobile: {
+    width: 48,
+    height: 48,
+    resizeMode: "contain",
+  },
   packEmoji: {
     fontSize: 56,
   },
+  packEmojiMobile: {
+    fontSize: 38,
+  },
   previewTag: {
     position: "absolute",
-    top: 10,
-    left: 10,
+    top: 8,
+    left: 8,
     backgroundColor: "#EEF2FF",
     borderWidth: 1,
     borderColor: "#C7D2FE",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   previewTagText: {
     color: "#6366F1",
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: "800",
   },
   creatorVerificationBadge: {
     position: "absolute",
-    top: 10,
-    right: 10,
+    top: 8,
+    right: 8,
     backgroundColor: "#FEF3C7",
     borderWidth: 1,
     borderColor: "#FDE68A",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   creatorVerificationText: {
     color: "#92400E",
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: "900",
-    letterSpacing: 0.4,
+    letterSpacing: 0.2,
   },
   stickerCountTag: {
     position: "absolute",
-    bottom: 10,
-    right: 10,
+    bottom: 8,
+    right: 8,
     backgroundColor: "rgba(15, 23, 42, 0.7)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   stickerCountText: {
     color: "#FFFFFF",
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: "700",
   },
   cardBody: {
     padding: 16,
   },
+  cardBodyMobile: {
+    padding: 10,
+  },
   packTitle: {
     fontSize: 16,
     fontWeight: "900",
     color: "#0F172A",
-    marginBottom: 6,
-    cursor: "pointer",
+    marginBottom: 4,
+  },
+  packTitleMobile: {
+    fontSize: 13,
+    marginBottom: 2,
   },
   creatorRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 4,
   },
   creatorText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: "#334155",
     fontWeight: "800",
   },
   creatorUniSub: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#15803D",
     fontWeight: "800",
   },
   ownedButton: {
-    marginTop: 14,
+    marginTop: 12,
     backgroundColor: "#EEF2FF",
     borderWidth: 1,
     borderColor: "#C7D2FE",
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
     alignItems: "center",
   },
+  ownedButtonMobile: {
+    paddingVertical: 6,
+    marginTop: 8,
+    borderRadius: 8,
+  },
   ownedButtonText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "800",
     color: "#6366F1",
   },
   buttonStack: {
-    gap: 8,
-    marginTop: 12,
+    gap: 6,
+    marginTop: 10,
+  },
+  buttonStackMobile: {
+    gap: 5,
+    marginTop: 8,
   },
   buyButton: {
     backgroundColor: "#FD0000",
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
     alignItems: "center",
-    cursor: "pointer",
+  },
+  buyButtonMobile: {
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   buyButtonText: {
     color: "#FFFFFF",
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "800",
+  },
+  buyButtonTextMobile: {
+    fontSize: 11,
   },
   unlockButton: {
     backgroundColor: "#FFF5F5",
     borderWidth: 1,
     borderColor: "#FECACA",
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
     alignItems: "center",
-    cursor: "pointer",
+  },
+  unlockButtonMobile: {
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   unlockButtonText: {
     color: "#FD0000",
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "800",
+  },
+  unlockButtonTextMobile: {
+    fontSize: 10.5,
   },
   pressed: {
     opacity: 0.75,
@@ -1206,8 +1311,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
-    padding: 20,
-    boxShadow: "0 14px 28px rgba(15, 23, 42, 0.25)",
+    padding: 18,
   },
   previewHeader: {
     flexDirection: "row",
@@ -1222,9 +1326,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   previewIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: "#EEF2FF",
     borderWidth: 1,
     borderColor: "#C7D2FE",
@@ -1233,113 +1337,113 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   modalCoverImg: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     resizeMode: "contain",
   },
   previewIconText: {
-    fontSize: 30,
+    fontSize: 26,
   },
   previewHeadingCopy: {
     flex: 1,
   },
   previewTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "800",
     color: "#0F172A",
   },
   previewCreator: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: "#64748B",
     marginTop: 2,
   },
   previewCloseButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
   },
   previewCloseText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: "#475569",
   },
   previewDescription: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 17,
     color: "#475569",
-    marginBottom: 16,
+    marginBottom: 14,
   },
   stickersBox: {
-    maxHeight: 280,
+    maxHeight: 260,
     backgroundColor: "#F8FAFC",
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
   stickersBoxTitle: {
     color: "#6366F1",
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: "800",
     letterSpacing: 0.5,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   stickersGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: 8,
     paddingBottom: 4,
   },
   stickerTile: {
-    width: "30%",
-    minWidth: 88,
-    minHeight: 86,
+    width: "30.5%",
+    minWidth: 78,
+    minHeight: 78,
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#CBD5E1",
     alignItems: "center",
     justifyContent: "center",
-    padding: 8,
+    padding: 6,
   },
   modalStickerThumbImg: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     resizeMode: "contain",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   stickerEmojiLarge: {
-    fontSize: 32,
-    marginBottom: 4,
+    fontSize: 28,
+    marginBottom: 3,
   },
   stickerTileName: {
     color: "#475569",
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: "700",
     textAlign: "center",
   },
   previewFooter: {
-    marginTop: 18,
+    marginTop: 16,
   },
   previewOwnedBanner: {
     backgroundColor: "#EEF2FF",
     borderWidth: 1,
     borderColor: "#C7D2FE",
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: "center",
   },
   previewOwnedBannerText: {
     color: "#6366F1",
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "700",
   },
   previewActionRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
   },
   previewActionButton: {
     flex: 1,
