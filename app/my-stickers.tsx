@@ -1,107 +1,160 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
+import { supabase } from "../src/lib/supabase";
 import { colors } from "../src/theme/colors";
 
-interface OwnedStickerPack {
+interface DisplayPack {
   id: string;
   title: string;
+  creator: string;
+  icon: string;
   category: string;
-  itemCount: number;
-  previewEmoji: string;
-  previewColor: string;
+  stickerCount: number;
 }
 
-const ALL_PACKS: OwnedStickerPack[] = [
-  {
-    id: "campus-starter",
+const STARTER_METADATA: Record<string, { title: string; creator: string; icon: string; category: string; count: number }> = {
+  "campus-starter": {
     title: "Campus Starter Pack",
+    creator: "UniAmi Team",
+    icon: "🎓",
     category: "Campus Life",
-    itemCount: 12,
-    previewEmoji: "🎓",
-    previewColor: "#FEF2F2",
+    count: 10,
   },
-  {
-    id: "exam-week",
+  "exam-week": {
     title: "Exam Week Moods",
-    category: "Exam Life",
-    itemCount: 18,
-    previewEmoji: "☕",
-    previewColor: "#FFF7ED",
+    creator: "UniAmi Team",
+    icon: "☕",
+    category: "Study & Focus",
+    count: 10,
   },
-  {
-    id: "tech-code",
+  "tech-code": {
     title: "Code & Bugs Pack",
-    category: "Tech & Code",
-    itemCount: 10,
-    previewEmoji: "💻",
-    previewColor: "#EFF6FF",
+    creator: "UniAmi Team",
+    icon: "💻",
+    category: "Tech / Gaming",
+    count: 10,
   },
-  {
-    id: "cute-mascot",
+  "cute-mascot": {
     title: "Cute Mascot Expressions",
+    creator: "UniAmi Team",
+    icon: "🦊",
     category: "Cute / Kawaii",
-    itemCount: 10,
-    previewEmoji: "🐱",
-    previewColor: "#FDF2F8",
+    count: 10,
   },
-  {
-    id: "study-moods",
+  "study-moods": {
     title: "Lo-Fi Study Moods",
-    category: "Study Moods",
-    itemCount: 8,
-    previewEmoji: "🔥",
-    previewColor: "#FEF2F2",
+    creator: "UniAmi Team",
+    icon: "🎧",
+    category: "Aesthetic / Lo-Fi",
+    count: 8,
   },
-  {
-    id: "campus-art",
+  "campus-art": {
     title: "Creative Arts Guild",
-    category: "Campus Art",
-    itemCount: 8,
-    previewEmoji: "🎨",
-    previewColor: "#F5F3FF",
+    creator: "UniAmi Team",
+    icon: "🎨",
+    category: "Aesthetic / Lo-Fi",
+    count: 8,
   },
-];
-
-const OWNED_PACKS_STORAGE_KEY = "@uni_ami_owned_packs";
-
-const getOwnedPackIds = async (): Promise<string[]> => {
-  try {
-    const stored = await AsyncStorage.getItem(OWNED_PACKS_STORAGE_KEY);
-    if (!stored) return [];
-
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter((value): value is string => typeof value === "string");
-  } catch {
-    return [];
-  }
 };
 
 export default function MyStickersScreen() {
-  const [ownedPacks, setOwnedPacks] = useState<OwnedStickerPack[]>([]);
+  const [ownedPacks, setOwnedPacks] = useState<DisplayPack[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  const fetchOwnedPacks = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      // 1. Fetch active owned IDs & created IDs from storage
+      const rawOwned = await AsyncStorage.getItem("@uni_ami_owned_packs");
+      const rawCreated = await AsyncStorage.getItem("@uni_ami_created_packs");
+      const rawLocalPacks = await AsyncStorage.getItem("@uni_ami_created_packs_data");
+
+      const ownedIds: string[] = rawOwned ? JSON.parse(rawOwned) : ["campus-starter"];
+      const createdIds: string[] = rawCreated ? JSON.parse(rawCreated) : [];
+      const localPacks: any[] = rawLocalPacks ? JSON.parse(rawLocalPacks) : [];
+
+      const activePackIds = Array.from(new Set([...ownedIds, ...createdIds, "campus-starter"]));
+
+      const resultPacks: DisplayPack[] = [];
+      const loadedIds = new Set<string>();
+
+      // 2. Resolve default starter packs
+      activePackIds.forEach((id) => {
+        if (STARTER_METADATA[id]) {
+          resultPacks.push({
+            id,
+            title: STARTER_METADATA[id].title,
+            creator: STARTER_METADATA[id].creator,
+            icon: STARTER_METADATA[id].icon,
+            category: STARTER_METADATA[id].category,
+            stickerCount: STARTER_METADATA[id].count,
+          });
+          loadedIds.add(id);
+        }
+      });
+
+      // 3. Resolve locally published packs
+      localPacks.forEach((lp) => {
+        if (activePackIds.includes(lp.id) && !loadedIds.has(lp.id)) {
+          resultPacks.push({
+            id: lp.id,
+            title: lp.title,
+            creator: lp.creator_name || "Student Creator",
+            icon: lp.icon || "🎨",
+            category: lp.category || "Custom",
+            stickerCount: Array.isArray(lp.stickers) ? lp.stickers.length : 3,
+          });
+          loadedIds.add(lp.id);
+        }
+      });
+
+      // 4. Resolve custom packs from Supabase
+      const missingIds = activePackIds.filter((id) => !loadedIds.has(id));
+      if (missingIds.length > 0) {
+        const { data: dbPacks } = await supabase
+          .from("sticker_packs")
+          .select("id, title, creator_name, icon, category, sticker_items(id)")
+          .in("id", missingIds);
+
+        if (dbPacks && dbPacks.length > 0) {
+          dbPacks.forEach((dp: any) => {
+            resultPacks.push({
+              id: dp.id,
+              title: dp.title,
+              creator: dp.creator_name || "Student Creator",
+              icon: dp.icon || "🎨",
+              category: dp.category || "Campus Vibes",
+              stickerCount: Array.isArray(dp.sticker_items) ? dp.sticker_items.length : 0,
+            });
+          });
+        }
+      }
+
+      setOwnedPacks(resultPacks);
+    } catch (e) {
+      console.warn("Error fetching owned packs:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      const loadOwnedPacks = async () => {
-        const ownedIds = await getOwnedPackIds();
-
-        const packs = ALL_PACKS.filter((pack) => ownedIds.includes(pack.id));
-        setOwnedPacks(packs);
-      };
-
-      void loadOwnedPacks();
-    }, [])
+      void fetchOwnedPacks();
+    }, [fetchOwnedPacks])
   );
-
-  const gallery = useMemo(() => {
-    return ownedPacks.length > 0 ? ownedPacks : [];
-  }, [ownedPacks]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -122,7 +175,11 @@ export default function MyStickersScreen() {
             </View>
           </View>
 
-          {gallery.length === 0 ? (
+          {loading ? (
+            <View style={styles.centerLoader}>
+              <ActivityIndicator size="large" color="#FD0000" />
+            </View>
+          ) : ownedPacks.length === 0 ? (
             <View style={styles.emptyStateCard}>
               <Text style={styles.emptyStateEmoji}>✨</Text>
               <Text style={styles.emptyStateTitle}>No sticker packs unlocked yet</Text>
@@ -139,29 +196,38 @@ export default function MyStickersScreen() {
             </View>
           ) : (
             <View style={styles.gridContainer}>
-              {gallery.map((pack) => (
-                <View key={pack.id} style={styles.packCard}>
-                  <View style={[styles.thumbnailBox, { backgroundColor: pack.previewColor }]}>
-                    <Text style={styles.packEmoji}>{pack.previewEmoji}</Text>
-                    <View style={styles.itemCountBadge}>
-                      <Text style={styles.itemCountText}>{pack.itemCount} stickers</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.cardMeta}>
-                    <View style={styles.metaHeader}>
-                      <Text style={styles.packTitle} numberOfLines={2}>{pack.title}</Text>
-                      <View style={styles.unlockedPill}>
-                        <Text style={styles.unlockedText}>Unlocked ✓</Text>
+              {ownedPacks.map((pack) => {
+                const isUrl = pack.icon?.startsWith("http");
+                return (
+                  <View key={pack.id} style={styles.packCard}>
+                    <View style={styles.thumbnailBox}>
+                      {isUrl ? (
+                        <Image source={{ uri: pack.icon }} style={styles.packImageCover} />
+                      ) : (
+                        <Text style={styles.packEmoji}>{pack.icon}</Text>
+                      )}
+                      <View style={styles.itemCountBadge}>
+                        <Text style={styles.itemCountText}>{pack.stickerCount} stickers</Text>
                       </View>
                     </View>
 
-                    <View style={styles.categoryChip}>
-                      <Text style={styles.categoryText}>{pack.category}</Text>
+                    <View style={styles.cardMeta}>
+                      <View style={styles.metaHeader}>
+                        <Text style={styles.packTitle} numberOfLines={1}>
+                          {pack.title}
+                        </Text>
+                        <View style={styles.unlockedPill}>
+                          <Text style={styles.unlockedText}>Unlocked ✓</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.categoryChip}>
+                        <Text style={styles.categoryText}>{pack.category}</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>
@@ -200,10 +266,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
   },
   backButtonText: {
     fontSize: 20,
@@ -224,6 +286,10 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: colors.muted,
     marginTop: 2,
+  },
+  centerLoader: {
+    padding: 48,
+    alignItems: "center",
   },
   emptyStateCard: {
     backgroundColor: "#FFFFFF",
@@ -269,23 +335,24 @@ const styles = StyleSheet.create({
   packCard: {
     width: "48.5%",
     flexBasis: "48.5%",
-    minWidth: 0,
+    minWidth: 280,
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
     borderWidth: 1.5,
     borderColor: colors.border,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
   },
   thumbnailBox: {
     height: 150,
+    backgroundColor: "#FFF5F5",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+  },
+  packImageCover: {
+    width: 90,
+    height: 90,
+    resizeMode: "contain",
   },
   packEmoji: {
     fontSize: 54,
@@ -305,7 +372,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   cardMeta: {
-    padding: 12,
+    padding: 16,
     gap: 10,
   },
   metaHeader: {
