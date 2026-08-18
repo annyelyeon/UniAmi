@@ -1,13 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ScreenShell } from "../../src/components/ScreenShell";
 import { useAuth } from "../../src/context/AuthContext";
 import { supabase } from "../../src/lib/supabase";
 import { colors } from "../../src/theme/colors";
-import type { User } from "../../src/types/models";
 import CommunityPosts from "../../src/components/CommunityPosts";
 import type { Community } from "../../src/types/models";
 
@@ -120,11 +119,35 @@ function BoardCard({
   );
 }
 
+type JoinedBoard = { id: string; name: string };
+
+function MyBoardsRow({ joinedBoards }: { joinedBoards: JoinedBoard[] }) {
+  return (
+    <View style={styles.chipsRow}>
+      <View style={[styles.chip, styles.chipActive]}>
+        <Text style={[styles.chipText, styles.chipTextActive]}>General</Text>
+      </View>
+      {joinedBoards.map((board) => (
+        <Pressable
+          key={board.id}
+          accessibilityRole="button"
+          onPress={() => router.push(`/community/board/${board.id}`)}
+          style={({ pressed }) => [styles.chip, pressed ? styles.cardPressed : null]}
+        >
+          <Text style={styles.chipText}>{board.name}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 export default function CommunityScreen() {
-  const { profile, loading: authLoading } = useAuth();
+  const { profile } = useAuth();
   const [facultyBoards, setFacultyBoards] = useState<Community[]>([]);
   const [clubBoards, setClubBoards] = useState<Community[]>([]);
   const [memberships, setMemberships] = useState<Record<string, true>>({});
+  const [joinedBoards, setJoinedBoards] = useState<JoinedBoard[]>([]);
+  const [discoverOpen, setDiscoverOpen] = useState(false);
 
   useEffect(() => {
     const loadBoards = async () => {
@@ -142,8 +165,31 @@ export default function CommunityScreen() {
       setMemberships(map);
     };
 
+    const loadJoinedBoards = async () => {
+      if (!profile?.id) {
+        setJoinedBoards([]);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("community_memberships")
+        .select("communities(id, name)")
+        .eq("user_id", profile.id);
+
+      if (error || !data) {
+        setJoinedBoards([]);
+        return;
+      }
+
+      const boards = data
+        .map((row: any) => (Array.isArray(row.communities) ? row.communities[0] : row.communities))
+        .filter(Boolean) as JoinedBoard[];
+
+      setJoinedBoards(boards);
+    };
+
     void loadBoards();
     void loadMemberships();
+    void loadJoinedBoards();
   }, [profile?.id]);
 
   const joinCommunity = async (communityId: string) => {
@@ -158,49 +204,75 @@ export default function CommunityScreen() {
     setMemberships((m) => { const copy = { ...m }; delete copy[communityId]; return copy; });
   };
 
-  // posts are handled by the shared CommunityPosts component
-
-  // Post composition is handled inside the CommunityPosts component
-
   return (
     <ScreenShell title="Community" subtitle="Boards and posts for your university community.">
       <CommunityHeader />
       <RecruitingBanner />
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Faculty boards</Text>
+        <Text style={styles.sectionTitle}>My boards</Text>
       </View>
-      <View style={styles.boardGrid}>
-        {facultyBoards.map((board) => (
-          <BoardCard
-            key={board.id}
-            community={board}
-            isMember={Boolean(memberships[board.id])}
-            onJoin={joinCommunity}
-            onLeave={leaveCommunity}
-          />
-        ))}
-      </View>
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Clubs</Text>
-      </View>
-      <View style={styles.boardGrid}>
-        {clubBoards.map((board) => (
-          <BoardCard
-            key={board.id}
-            community={board}
-            isMember={Boolean(memberships[board.id])}
-            onJoin={joinCommunity}
-            onLeave={leaveCommunity}
-          />
-        ))}
-      </View>
+      <MyBoardsRow joinedBoards={joinedBoards} />
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>General</Text>
       </View>
       <CommunityPosts />
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setDiscoverOpen((v) => !v)}
+        style={({ pressed }) => [styles.discoverHeader, pressed ? styles.cardPressed : null]}
+      >
+        <Text style={styles.discoverHeaderText}>Discover boards</Text>
+        <Ionicons
+          name={discoverOpen ? "chevron-up-outline" : "chevron-down-outline"}
+          size={20}
+          color={colors.text}
+        />
+      </Pressable>
+
+      {discoverOpen ? (
+        <>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Faculty boards</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.boardCarousel}
+          >
+            {facultyBoards.map((board) => (
+              <BoardCard
+                key={board.id}
+                community={board}
+                isMember={Boolean(memberships[board.id])}
+                onJoin={joinCommunity}
+                onLeave={leaveCommunity}
+              />
+            ))}
+          </ScrollView>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Clubs</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.boardCarousel}
+          >
+            {clubBoards.map((board) => (
+              <BoardCard
+                key={board.id}
+                community={board}
+                isMember={Boolean(memberships[board.id])}
+                onJoin={joinCommunity}
+                onLeave={leaveCommunity}
+              />
+            ))}
+          </ScrollView>
+        </>
+      ) : null}
     </ScreenShell>
   );
 }
@@ -300,19 +372,61 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
   },
-  boardGrid: {
+  chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 8,
   },
-  boardCard: {
-    width: "48%",
+  chip: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: 20,
     borderWidth: 1,
-    padding: 16,
-    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
+  chipActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  chipText: {
+    color: colors.text,
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  chipTextActive: {
+    color: "#FFFFFF",
+  },
+  discoverHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  discoverHeaderText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  boardCarousel: {
+  flexDirection: "row",
+  gap: 10,
+  paddingRight: 4,
+  },
+  boardCard: {
+    width: 150,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
+    gap: 6,
   },
   boardIconWrap: {
     width: 38,
@@ -343,133 +457,6 @@ const styles = StyleSheet.create({
   },
   boardButtonText: {
     color: "#fff",
-    fontWeight: "800",
-  },
-  postsList: {
-    gap: 12,
-  },
-  composerCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 16,
-    gap: 12,
-  },
-  composerInput: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 22,
-    minHeight: 96,
-    textAlignVertical: "top",
-  },
-  composerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  composerHint: {
-    color: colors.muted,
-    flex: 1,
-    fontSize: 12,
-  },
-  postButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  postButtonDisabled: {
-    opacity: 0.45,
-  },
-  postButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  loadingState: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 12,
-    paddingVertical: 28,
-  },
-  loadingText: {
-    color: colors.muted,
-    fontSize: 14,
-  },
-  emptyState: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 24,
-    borderWidth: 1,
-    paddingVertical: 28,
-    paddingHorizontal: 18,
-  },
-  emptyStateText: {
-    color: colors.muted,
-    fontSize: 14,
-    textAlign: "center",
-  },
-  postCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 16,
-    gap: 14,
-  },
-  postTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  postMeta: {
-    flex: 1,
-    gap: 2,
-  },
-  postAuthor: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  postBoard: {
-    color: colors.muted,
-    fontSize: 13,
-  },
-  postBody: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  postFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    flexWrap: "wrap",
-  },
-  metricGroup: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  metricText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  messageLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  messageLinkText: {
-    color: colors.accent,
-    fontSize: 13,
     fontWeight: "800",
   },
 });
