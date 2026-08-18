@@ -28,12 +28,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    const apiKey = Deno.env.get("AI_API_KEY") || Deno.env.get("GROQ_API_KEY");
-
+    const apiKey = Deno.env.get("GROQ_API_KEY") || Deno.env.get("AI_API_KEY");
+    
     if (!apiKey) {
       return new Response(
         JSON.stringify({
-          reply: "Configuration Error: AI_API_KEY is not set in Supabase Secrets. Please add your Groq/OpenRouter key.",
+          reply: "Configuration Error: GROQ_API_KEY is not set in Supabase Secrets. Please add your Groq/OpenRouter key.",
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
