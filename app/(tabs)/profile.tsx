@@ -408,7 +408,6 @@ export default function ProfileScreen() {
               onPress={() => handleOpenLink("https://maps.google.com")}
               style={({ pressed }) => [
                 styles.linkRow,
-                { borderBottomWidth: 0 },
                 pressed && styles.rowPressed,
               ]}
             >
