@@ -322,6 +322,7 @@ export default function ProfileScreen() {
               label="Stickers owned"
               icon="color-palette-outline"
               theme="cyan"
+              fullWidth
               onPress={() => router.push("/my-stickers" as any)}
             />
             <ActivityStatCard
@@ -330,13 +331,6 @@ export default function ProfileScreen() {
               icon="chatbubbles-outline"
               theme="slate"
               onPress={() => router.push("/(tabs)/community")}
-            />
-            <ActivityStatCard
-              value={`${communitiesCount}`}
-              label="Clubs & Groups"
-              icon="people-outline"
-              theme="slate"
-              onPress={() => router.push("/profile/joined-communities")}
             />
             <ActivityStatCard
               value={`${subjectCount}`}
@@ -482,12 +476,14 @@ function ActivityStatCard({
   value,
   icon,
   theme = "slate",
+  fullWidth,
   onPress,
 }: {
   label: string;
   value: string;
   icon: keyof typeof Ionicons.glyphMap;
   theme?: "cyan" | "slate";
+  fullWidth?: boolean;
   onPress: () => void;
 }) {
   const isCyan = theme === "cyan";
@@ -497,6 +493,7 @@ function ActivityStatCard({
       onPress={onPress}
       style={({ pressed }) => [
         styles.activityCard,
+        fullWidth ? styles.activityCardFullWidth : null,
         isCyan && styles.activityCardCyan,
         pressed ? styles.rowPressed : null,
       ]}
@@ -762,14 +759,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   activityGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginTop: 4,
+  flexDirection: "row",
+  flexWrap: "wrap",
+  gap: 12,
+  marginTop: 4,
   },
   activityCard: {
-    flexBasis: "48.5%",
-    width: "48.5%",
+    flexBasis: "50%",
+    flexGrow: 1,
     backgroundColor: "#FFFFFF",
     borderColor: "#E2E8F0",
     borderRadius: 20,
@@ -777,10 +774,15 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 6,
   },
+  activityCardFullWidth: {
+      flexBasis: "100%",
+      width: "100%",
+  },
   activityCardCyan: {
     backgroundColor: "#F0F9FF",
     borderColor: "#BAE6FD",
   },
+
   statHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
