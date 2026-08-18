@@ -7,7 +7,6 @@ export type PremiumStatus = "free" | "premium";
 export type AssessmentType =
   | "assignment"
   | "quiz"
-  | "exam"
   | "project"
   | "mixed";
 
