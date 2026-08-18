@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { colors } from "../../src/theme/colors";
+import { supabase } from "../../src/lib/supabase";
 
 const subjectChips = [
   "Business",
@@ -21,25 +23,44 @@ const subjectChips = [
   "Cybersecurity",
 ];
 
-const communityPosts = [
-  {
-    initials: "JK",
-    label: "Verified student • Engineering board",
-    body: "Anyone know if COMP3308 project is still 4 people this semester?",
-  },
-  {
-    initials: "IT",
-    label: "IT Society • Club post",
-    body: "Networking night this Thursday, 6pm - free pizza 🍕",
-  },
-  {
-    initials: "SV",
-    label: "Verified student • General board",
-    body: "Best cheap lunch spots near campus?",
-  },
-];
-
 export default function HomeScreen() {
+  const [recentPosts, setRecentPosts] = useState<
+    { id: string; initials: string; label: string; boardName: string; body: string }[]
+  >([]);
+
+  useEffect(() => {
+    const loadRecentPosts = async () => {
+      const { data, error } = await supabase
+        .from("posts")
+        .select("id, content, created_at, profiles!author_id(nickname), communities!community_id(name)")
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      if (error || !data) {
+        setRecentPosts([]);
+        return;
+      }
+
+      const mapped = data.map((row: any) => {
+        const profileData = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+        const communityData = Array.isArray(row.communities) ? row.communities[0] : row.communities;
+        const nickname: string = profileData?.nickname ?? "Student";
+        const initials = nickname.slice(0, 2).toUpperCase();
+        return {
+          id: row.id,
+          initials,
+          label: nickname,
+          boardName: communityData?.name ?? "General",
+          body: row.content,
+        };
+      });
+
+      setRecentPosts(mapped);
+    };
+
+    void loadRecentPosts();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
@@ -96,18 +117,22 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.communityFeed}>
-              {communityPosts.map((post) => (
-                <View key={post.label} style={styles.postRow}>
-                  <View style={styles.avatarBadge}>
-                    <Text style={styles.avatarText}>{post.initials}</Text>
-                  </View>
+              {recentPosts.length > 0 ? (
+                recentPosts.map((post) => (
+                  <View key={post.id} style={styles.postRow}>
+                    <View style={styles.avatarBadge}>
+                      <Text style={styles.avatarText}>{post.initials}</Text>
+                    </View>
 
-                  <View style={styles.postBody}>
-                    <Text style={styles.postMeta}>{post.label}</Text>
-                    <Text style={styles.postText}>{post.body}</Text>
+                    <View style={styles.postBody}>
+                      <Text style={styles.postMeta}>{post.label} • {post.boardName}</Text>
+                      <Text style={styles.postText}>{post.body}</Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                ))
+              ) : (
+                <Text style={styles.postMeta}>No posts yet</Text>
+              )}
             </View>
           </Pressable>
 
