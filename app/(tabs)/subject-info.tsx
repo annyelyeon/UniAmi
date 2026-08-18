@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -318,49 +319,60 @@ export default function SubjectInfoScreen() {
   };
 
   const deleteSubject = async (code: string) => {
-    if (!profile?.id) {
-      Alert.alert("Error", "You must be signed in to delete a subject.");
+  if (!profile?.id) {
+    Alert.alert("Error", "You must be signed in to delete a subject.");
+    return;
+  }
+
+  const performDelete = async () => {
+    const { data, error } = await supabase
+      .from("subjects")
+      .delete()
+      .eq("code", code)
+      .eq("created_by", profile.id)
+      .select("code");
+
+    if (error) {
+      if (Platform.OS === "web") {
+        window.alert(error.message ?? "Failed to delete subject");
+      } else {
+        Alert.alert("Error", error.message ?? "Failed to delete subject");
+      }
       return;
     }
 
+    if (!data || data.length === 0) {
+      if (Platform.OS === "web") {
+        window.alert("This subject was not deleted. Check permissions and try again.");
+      } else {
+        Alert.alert("Unable to delete", "This subject was not deleted. Check permissions and try again.");
+      }
+      return;
+    }
+
+    setSubject((prev) => (prev?.code === code ? null : prev));
+    setReviews((prev) => (subject?.code === code ? [] : prev));
+    setFuzzyMatches((prev) => prev.filter((item) => item.code !== code));
+
+    if (submittedCode === code) {
+      setSubmittedCode("");
+    }
+    if (searchText.trim().toUpperCase() === code) {
+      setSearchText("");
+    }
+  };
+
+  if (Platform.OS === "web") {
+    if (window.confirm(`Delete ${code}?`)) {
+      await performDelete();
+    }
+  } else {
     Alert.alert("Delete subject", `Delete ${code}?`, [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          const { data, error } = await supabase
-            .from("subjects")
-            .delete()
-            .eq("code", code)
-            .eq("created_by", profile.id)
-            .select("code");
-
-          if (error) {
-            Alert.alert("Error", error.message ?? "Failed to delete subject");
-            return;
-          }
-
-          if (!data || data.length === 0) {
-            Alert.alert("Unable to delete", "This subject was not deleted. Check permissions and try again.");
-            return;
-          }
-
-          setSubject((prev) => (prev?.code === code ? null : prev));
-          setReviews((prev) => (subject?.code === code ? [] : prev));
-          setFuzzyMatches((prev) => prev.filter((item) => item.code !== code));
-
-          if (submittedCode === code) {
-            setSubmittedCode("");
-          }
-
-          if (searchText.trim().toUpperCase() === code) {
-            setSearchText("");
-          }
-        },
-      },
+      { text: "Delete", style: "destructive", onPress: performDelete },
     ]);
-  };
+  }
+};
 
   return (
     <ScreenShell title="Subject info" subtitle="Browse crowd-sourced subject reviews.">
