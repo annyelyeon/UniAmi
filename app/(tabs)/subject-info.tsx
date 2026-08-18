@@ -73,11 +73,13 @@ type SubjectReviewRow = {
   author_id: string;
   text: string;
   created_at: string;
+  profiles?: { nickname: string } | { nickname: string }[] | null;
 };
 
 type SubjectReviewView = SubjectReview & {
   id: string;
   createdAt: string;
+  authorNickname: string;
 };
 
 const assessmentLabel: Record<Subject["assessmentType"], string> = {
@@ -116,27 +118,35 @@ async function fetchSubjectByCode(code: string) {
   if (exactData) {
     // fetch reviews for the exact match
     const reviewCode = (exactData as SubjectRow).code ?? trimmedCode;
-    const { data: reviewData, error: reviewError } = await supabase
-      .from("subject_reviews")
-      .select("id, subject_code, author_id, text, created_at")
-      .eq("subject_code", reviewCode)
-      .order("created_at", { ascending: false });
+  const { data: reviewData, error: reviewError } = await supabase
+    .from("subject_reviews")
+    .select("id, subject_code, author_id, text, created_at, profiles(nickname)")
+    .eq("subject_code", reviewCode)
+    .order("created_at", { ascending: false });
 
-    if (reviewError) {
-      return { subject: mapSubjectRow(exactData as SubjectRow), reviews: [], fuzzyMatches: [] as Subject[] };
-    }
+  const mappedSubject = mapSubjectRow(exactData as SubjectRow);
 
-    return {
-      subject: mapSubjectRow(exactData as SubjectRow),
-      reviews: (reviewData as SubjectReviewRow[] | null | undefined)?.map((review) => ({
-        id: review.id,
-        subjectCode: review.subject_code,
-        authorId: review.author_id,
-        text: review.text,
-        createdAt: review.created_at,
-      })) ?? [],
-      fuzzyMatches: [] as Subject[],
-    };
+  if (reviewError) {
+    return { subject: mappedSubject, reviews: [], fuzzyMatches: [] as Subject[] };
+  }
+
+  const finalReviews: SubjectReviewView[] = (reviewData as SubjectReviewRow[] | null | undefined)?.map((review) => {
+  const profileData = Array.isArray(review.profiles) ? review.profiles[0] : review.profiles;
+  return {
+    id: review.id,
+    subjectCode: review.subject_code,
+    authorId: review.author_id,
+    authorNickname: profileData?.nickname ?? "Student",
+    text: review.text,
+    createdAt: review.created_at,
+  };
+}) ?? [];
+
+  return {
+    subject: { ...mappedSubject, reviewCount: finalReviews.length },
+    reviews: finalReviews,
+    fuzzyMatches: [] as Subject[],
+  };
   }
 
   // no exact match -> fetch fuzzy matches (multiple) and return them for user selection
@@ -527,11 +537,11 @@ export default function SubjectInfoScreen() {
         reviews.map((review) => (
           <View key={review.id} style={styles.reviewCard}>
             <View style={styles.reviewTopRow}>
-              <AvatarInitials name="Student" />
-              <View style={styles.reviewMeta}>
-                <Text style={styles.reviewAuthor}>Student</Text>
-                <Text style={styles.reviewSubject}>{review.subjectCode}</Text>
-              </View>
+             <AvatarInitials name={review.authorNickname} />
+            <View style={styles.reviewMeta}>
+              <Text style={styles.reviewAuthor}>{review.authorNickname}</Text>
+              <Text style={styles.reviewSubject}>{review.subjectCode}</Text>
+            </View>
             </View>
 
             <Text style={styles.reviewText}>{review.text}</Text>
